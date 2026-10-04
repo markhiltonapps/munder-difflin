@@ -69,8 +69,16 @@ export class StaplerWindows {
   private shotSeq = 0;
   private shotSecond = '';
 
-  constructor(private readonly deps: StaplerWindowDeps) {
-    // A display change while the widget is up: put it back on a screen.
+  /** The constructor runs at module load, before the app is ready, and
+   *  Electron's `screen` module throws if touched before then. So: no Electron
+   *  calls here. Display listeners attach on the first open (below). */
+  constructor(private readonly deps: StaplerWindowDeps) {}
+
+  private watchingDisplays = false;
+  /** A display change while the widget is up: put it back on a screen. */
+  private watchDisplays(): void {
+    if (this.watchingDisplays) return;
+    this.watchingDisplays = true;
     const back = (): void => this.keepOnScreen();
     screen.on('display-added', back);
     screen.on('display-removed', back);
@@ -91,6 +99,7 @@ export class StaplerWindows {
   open(): { ok: boolean; error?: string } {
     if (!this.deps.enabled()) return { ok: false, error: 'Stapler is disabled' };
     if (this.isOpen()) { this.widget?.show(); return { ok: true }; }
+    this.watchDisplays();
     const size = WIDGET_SIZE.closed;
     const saved = this.deps.persist.getKv<Point>(KV_POS);
     const primary = screen.getPrimaryDisplay().workArea;
