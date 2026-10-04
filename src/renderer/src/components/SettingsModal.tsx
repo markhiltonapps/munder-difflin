@@ -525,6 +525,11 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   // v0.3.4 fix: the config default is ON ('now on by default', 0.2.7) — seeding
   // with `?? false` displayed OFF while the feature was actually running.
   const [freeflowEnabled, setFreeflowEnabled] = useState(config.freeflowEnabled !== false);
+  // --- Stapler (meeting transcription) ---
+  const [staplerEnabled, setStaplerEnabled] = useState(config.staplerEnabled !== false);
+  const [staplerVocabulary, setStaplerVocabulary] = useState(config.staplerVocabulary ?? '');
+  const [staplerBusy, setStaplerBusy] = useState(false);
+  const [staplerNote, setStaplerNote] = useState('');
   const [groqKey, setGroqKey] = useState(config.groqApiKey ?? '');
   const [freeflowModel, setFreeflowModel] = useState(config.freeflowModel ?? 'whisper-large-v3-turbo');
   const [showGroqKey, setShowGroqKey] = useState(false);
@@ -555,6 +560,8 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
       const kgOn = (cc as { knowledgeGraph?: { enabled?: boolean } }).knowledgeGraph?.enabled === true;
       setKgEnabled(kgOn);
       setFreeflowEnabled(cc.freeflowEnabled !== false);
+      setStaplerEnabled(cc.staplerEnabled !== false);
+      setStaplerVocabulary(cc.staplerVocabulary ?? '');
       setGroqKey(cc.groqApiKey ?? '');
       setFreeflowModel(cc.freeflowModel ?? 'whisper-large-v3-turbo');
       setIdleDisconnectMs((c as HarnessConfig).realtimeIdleDisconnectMs ?? 180_000);
@@ -768,6 +775,24 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     const next = !freeflowEnabled;
     setFreeflowEnabled(next);
     void saveFreeflow(next);
+  };
+
+  // --- Stapler handlers ---
+  /** Persist the flag (main arms/disarms the global chord) and the vocabulary. */
+  const saveStapler = async (enabledOverride?: boolean) => {
+    const enabled = enabledOverride ?? staplerEnabled;
+    setStaplerBusy(true); setStaplerNote('');
+    try {
+      await window.cth.staplerSetConfig({ enabled, vocabulary: staplerVocabulary });
+      setStaplerNote(t('settings.saved'));
+    } catch (e) {
+      setStaplerNote(e instanceof Error ? e.message : t('settings.voice.couldNotSave'));
+    } finally { setStaplerBusy(false); }
+  };
+  const toggleStapler = () => {
+    const next = !staplerEnabled;
+    setStaplerEnabled(next);
+    void saveStapler(next);
   };
 
   const reset = async () => {
@@ -1965,6 +1990,58 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
 
                             <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
                               {t('settings.voice.freeFlowHint')}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div style={sectionRule} />
+
+                      {/* Stapler — meeting transcription (You + Them → any agent) */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        <div style={sectionHeadTight}>
+                          {t('settings.voice.stapler')}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
+                              {t('settings.voice.staplerTitle')}
+                            </span>
+                            <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                              {t('settings.voice.staplerDesc')}
+                            </span>
+                          </div>
+                          <PixelButton
+                            variant={staplerEnabled ? 'primary' : 'secondary'}
+                            size="sm"
+                            onClick={toggleStapler}
+                            disabled={staplerBusy}
+                          >
+                            {staplerEnabled ? t('common.on') : t('common.off')}
+                          </PixelButton>
+                        </div>
+                        {staplerEnabled && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              <span style={slackLabelStyle}>{t('settings.voice.vocabulary')}</span>
+                              <textarea
+                                rows={3}
+                                value={staplerVocabulary}
+                                onChange={(e) => setStaplerVocabulary(e.target.value)}
+                                placeholder={t('settings.voice.vocabularyPlaceholder')}
+                                style={{ ...slackInputStyle, fontFamily: 'var(--cth-font-mono)', resize: 'vertical', height: 'auto', lineHeight: '18px', padding: '6px 8px' }}
+                              />
+                            </label>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                              <PixelButton variant="ghost" size="sm" onClick={() => saveStapler()} disabled={staplerBusy}>
+                                {t('common.save')}
+                              </PixelButton>
+                              {staplerNote && (
+                                <span style={{ fontSize: 12, color: 'var(--cth-ink-500)' }}>{staplerNote}</span>
+                              )}
+                            </div>
+                            <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                              {t('settings.voice.staplerHint')}
                             </span>
                           </div>
                         )}

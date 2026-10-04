@@ -1,3 +1,4 @@
+import type { StaplerMeeting, StaplerMeetingSummary } from '../shared/stapler';
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
 import type { AgentProvider } from '../shared/agentProvider';
 import type { HireManifest } from '../shared/hire';
@@ -304,6 +305,9 @@ export interface HarnessConfig {
   freeflowEnabled?: boolean;
   groqApiKey?: string;
   freeflowModel?: string;
+  /** Stapler meeting transcription (mirrors src/main/config.ts). */
+  staplerEnabled?: boolean;
+  staplerVocabulary?: string;
   /** Realtime Michael voice loop — true ONLY while a session holds the mic
    *  (renderer session sets it at start()/stop()); the main mic permission gate
    *  reads it. Default off. */
@@ -1271,6 +1275,33 @@ const api = {
     audio: ArrayBuffer | Uint8Array; mimeType?: string; filename?: string; language?: string;
   }): Promise<{ ok: boolean; text?: string; error?: string }> =>
     ipcRenderer.invoke('freeflow:transcribe', arg),
+
+  // ─── Stapler (meeting transcription: You + Them → transcript → any agent) ─────
+  /** Persist Stapler settings (flag / vocabulary). The Groq key is the Free Flow one. */
+  staplerSetConfig: (patch: { enabled?: boolean; vocabulary?: string }): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('stapler:setConfig', patch),
+  /** Transcribe one captured chunk via Groq, with the vocabulary as the spelling
+   *  hint. Gated on the flag + a key, like Free Flow. */
+  staplerTranscribe: (arg: {
+    audio: ArrayBuffer | Uint8Array; mimeType?: string; filename?: string; language?: string;
+  }): Promise<{ ok: boolean; text?: string; error?: string }> =>
+    ipcRenderer.invoke('stapler:transcribe', arg),
+  staplerList: (): Promise<StaplerMeetingSummary[]> => ipcRenderer.invoke('stapler:list'),
+  staplerGet: (id: string): Promise<StaplerMeeting | null> => ipcRenderer.invoke('stapler:get', id),
+  /** Upsert a meeting; writes `<id>.json` and `<id>.md` under the harness home. */
+  staplerSave: (meeting: StaplerMeeting): Promise<{ ok: true; markdownPath: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('stapler:save', meeting),
+  staplerDelete: (id: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('stapler:delete', id),
+  /** Whether this platform can capture the other side of a call (system audio
+   *  loopback — Windows). Elsewhere Stapler records the microphone only. */
+  staplerCapabilities: (): Promise<{ loopback: boolean }> => ipcRenderer.invoke('stapler:capabilities'),
+  /** Ctrl+Shift+Space pressed anywhere (global shortcut, registered by main
+   *  while Stapler is enabled): start or stop the meeting. */
+  onStaplerToggle: (cb: () => void): (() => void) => {
+    const listener = (): void => cb();
+    ipcRenderer.on('stapler:toggle', listener);
+    return () => ipcRenderer.removeListener('stapler:toggle', listener);
+  },
 
   // ─── Integrations registry (Phase 2 — labeled REST endpoints via the secret broker) ──
   // Bridges the §6 IPC surface for the Settings UI. WRITE-ONLY secret contract end to

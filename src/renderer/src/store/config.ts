@@ -107,6 +107,9 @@ export interface HarnessConfig {
   freeflowEnabled?: boolean;
   groqApiKey?: string;
   freeflowModel?: string;
+  /** Stapler meeting transcription (mirrors src/main/config.ts). */
+  staplerEnabled?: boolean;
+  staplerVocabulary?: string;
   /** Realtime voice idle auto-disconnect (ms); default 180000 (3 min), 0 = never.
    *  Tuned in Settings → Realtime Michael; the cost cap stays the runaway guard. */
   realtimeIdleDisconnectMs?: number;

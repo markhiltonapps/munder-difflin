@@ -8,6 +8,21 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Stapler: meetings, transcribed, handed to an agent.** A new tab on the orchestrator's Command
+  Center (and the first entry in the sidebar layout). Press **Record**, or **Ctrl+Shift+Space from
+  any app**, when the call starts: your microphone is written as **You** and the call's audio as
+  **Them**, captured in twenty-second chunks and transcribed as you go with Groq Whisper on the key
+  you already use for Free Flow. The dialogue lands on screen as it happens; every line is a text
+  box, so a mis-heard name is a click away from fixed. Stop, give it a title and a description, pick
+  an agent and say what you want done, and the transcript is written as markdown beside the hive
+  (`stapler/meetings/<id>.md`) and the agent is queued a short message pointing at it. Past meetings
+  stay in a list, searchable by an agent since they are files. Only transcripts are kept; the audio
+  never touches the disk. Silent chunks are skipped before upload (a level gate per side), and the
+  words Whisper invents for silence ("Thank you.") are dropped on arrival. A **vocabulary** in
+  Settings → Voice spells your names and terms right. Capturing the other side needs Windows, where
+  Electron can take the system loopback; on macOS and Linux the meeting records your microphone and
+  says so. The feature is behind one switch in Settings → Voice; off, the global chord is released
+  and no audio permission is granted.
 - **The office sidebar: a second roster layout.** The title bar gets a layout toggle. Classic is the
   card strip under the floor, unchanged. The sidebar layout puts a rail on the left with **Tasks,
   Inbox, Automations, Memory and Capabilities** at the top — each one click to the matching Command

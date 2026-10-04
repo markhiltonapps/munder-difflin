@@ -12,6 +12,7 @@ import { TriggersTab } from './triggers/TriggersTab';
 import { TriggerHistoryTab } from './triggers/TriggerHistoryTab';
 import { WorkersTab } from './WorkersTab';
 import { SkillsTab } from './SkillsTab';
+import { StaplerTab } from './StaplerTab';
 import { acquireTerminal, disposeTerminal, resetTerminal } from './terminalPool';
 import { terminalInstanceKey } from './terminalRecovery';
 import { Icon } from './Icon';
@@ -47,7 +48,7 @@ import { useRtl } from '@/i18n/useDirection';
 // the old Schedules tab: schedules are now one of four trigger types, and the
 // whole surface lives in ./triggers (see src/shared/triggers.ts for the contract).
 type CCTab = 'terminal' | 'floor' | 'tasks' | 'human' | 'triggers' | 'trigger-history'
-  | 'memory' | 'graph' | 'activity' | 'skills' | 'workers';
+  | 'memory' | 'graph' | 'activity' | 'skills' | 'workers' | 'stapler';
 
 /** Fallback denominator for the per-agent token meter when no floor token budget
  *  is configured — so the bar reads as a budget estimate (filled + remaining)
@@ -76,7 +77,8 @@ const TABS: { key: CCTab; labelKey: string; icon: Parameters<typeof Icon>[0]['na
   { key: 'graph', labelKey: 'commandCenter.tabs.graph', icon: 'web' },
   { key: 'activity', labelKey: 'commandCenter.tabs.activity', icon: 'bell' },
   { key: 'skills', labelKey: 'commandCenter.tabs.skills', icon: 'sparkle' },
-  { key: 'workers', labelKey: 'commandCenter.tabs.workers', icon: 'gear' }
+  { key: 'workers', labelKey: 'commandCenter.tabs.workers', icon: 'gear' },
+  { key: 'stapler', labelKey: 'commandCenter.tabs.stapler', icon: 'mic' }
 ];
 
 /** @param fullscreen this instance IS the fullscreen overlay, so it owns the pty
@@ -336,6 +338,7 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
         {tab === 'activity' && <ActivityTab />}
         {tab === 'skills' && <SkillsTab agentCwd={agent.cwd} />}
         {tab === 'workers' && <WorkersTab />}
+        {tab === 'stapler' && <StaplerTab />}
       </div>
     </PixelPanel>
   );

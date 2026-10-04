@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, powerSaveBlocker, screen, shell, Notification } from 'electron';
+import { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, powerMonitor, powerSaveBlocker, screen, shell, Notification } from 'electron';
 import { spawn } from 'node:child_process';
 import {
   rmSync, existsSync, readFileSync, readdirSync, statSync, cpSync, writeFileSync,
@@ -50,6 +50,8 @@ import {
   appendTriggerHistory, clearTriggerHistory, listTriggerHistory, updateTriggerHistory
 } from './triggerHistory';
 import { transcribeWithGroq, DEFAULT_GROQ_MODEL } from './freeflow';
+import { StaplerStore } from './stapler';
+import { isMeetingId, vocabularyPrompt, type StaplerMeeting } from '../shared/stapler';
 import { registerRealtimeIpc } from './realtime';
 import { registerRealtimeActionIpc } from './realtimeActions';
 import { initCompletionWatcher } from './realtimeCompletionWatcher';
@@ -2363,9 +2365,27 @@ function createWindow(opts: { floor?: boolean } = {}): BrowserWindow {
   // xterm/editor copy must keep working).
   const micFeatureLive = (): boolean => {
     const cfg = readConfig();
-    return cfg.freeflowEnabled === true || cfg.realtimeVoiceEnabled === true;
+    // Stapler (meeting transcription) is the third mic feature: its flag opens
+    // the gate the same way Free Flow's does, and like Free Flow nothing is
+    // captured until the user presses Record.
+    return cfg.freeflowEnabled === true || cfg.realtimeVoiceEnabled === true || cfg.staplerEnabled === true;
   };
   const ses = win.webContents.session;
+  // Stapler's "Them": getDisplayMedia({ audio }) from the renderer lands here.
+  // We answer with the primary screen as the (immediately discarded) video track
+  // and the system-audio LOOPBACK as the audio track — Electron supports loopback
+  // on Windows only, so elsewhere the request gets video alone and the renderer
+  // notices there is no audio track and records the microphone side only. A
+  // request while Stapler is off is refused outright: the gate is one flag.
+  ses.setDisplayMediaRequestHandler((_request, callback) => {
+    if (readConfig().staplerEnabled !== true) { callback({}); return; }
+    desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
+      const source = sources[0];
+      if (!source) { callback({}); return; }
+      if (process.platform === 'win32') callback({ video: source, audio: 'loopback' });
+      else callback({ video: source });
+    }).catch(() => callback({}));
+  });
   ses.setPermissionRequestHandler((_wc, permission, callback, details) => {
     if (permission === 'media') {
       const mediaTypes = details && 'mediaTypes' in details ? details.mediaTypes : undefined;
@@ -4427,6 +4447,76 @@ ipcMain.handle('freeflow:transcribe', async (_evt, arg: unknown) => {
   return out;
 });
 
+// ─── IPC: Stapler (meeting transcription — You + Them, chunked, to any agent) ──
+// Storage lives under the harness home beside the hive so a transcript is a
+// file an agent can `Read`; before onboarding picks a home it falls back to
+// userData. The Groq key is the Free Flow one and stays in main.
+const staplerRoot = (): string => readConfig().harnessHome || app.getPath('userData');
+const stapler = (): StaplerStore => new StaplerStore(staplerRoot());
+
+ipcMain.handle('stapler:setConfig', (_evt, patch: unknown) => {
+  const p = (patch ?? {}) as { enabled?: unknown; vocabulary?: unknown };
+  const next: Partial<HarnessConfig> = {};
+  if (typeof p.enabled === 'boolean') next.staplerEnabled = p.enabled;
+  if (typeof p.vocabulary === 'string') next.staplerVocabulary = p.vocabulary.trim().slice(0, 4000) || undefined;
+  writeConfig(next);
+  syncStaplerShortcut();
+  return { ok: true };
+});
+
+ipcMain.handle('stapler:transcribe', async (_evt, arg: unknown) => {
+  const cfg = readConfig();
+  if (cfg.staplerEnabled !== true) return { ok: false, error: 'Stapler is disabled' };
+  if (!cfg.groqApiKey) return { ok: false, error: 'no Groq API key set' };
+  const a = (arg ?? {}) as { audio?: unknown; mimeType?: unknown; filename?: unknown; language?: unknown };
+  if (!(a.audio instanceof ArrayBuffer) && !(a.audio instanceof Uint8Array)) {
+    return { ok: false, error: 'no audio' };
+  }
+  const out = await transcribeWithGroq({
+    apiKey: cfg.groqApiKey,
+    audio: a.audio,
+    mimeType: typeof a.mimeType === 'string' ? a.mimeType : undefined,
+    filename: typeof a.filename === 'string' ? a.filename : undefined,
+    model: cfg.freeflowModel || DEFAULT_GROQ_MODEL,
+    language: typeof a.language === 'string' && a.language ? a.language : undefined,
+    prompt: vocabularyPrompt(cfg.staplerVocabulary)
+  });
+  return out;
+});
+
+ipcMain.handle('stapler:capabilities', () => ({ loopback: process.platform === 'win32' }));
+ipcMain.handle('stapler:list', () => stapler().list());
+ipcMain.handle('stapler:get', (_evt, id: unknown) => (isMeetingId(id) ? stapler().get(id) : null));
+ipcMain.handle('stapler:save', (_evt, meeting: unknown) => {
+  const m = meeting as StaplerMeeting;
+  if (!m || typeof m !== 'object' || !isMeetingId(m.id)) return { ok: false, error: 'invalid meeting' };
+  return stapler().save(m);
+});
+ipcMain.handle('stapler:delete', (_evt, id: unknown) => (isMeetingId(id) ? stapler().delete(id) : { ok: false, error: 'invalid id' }));
+
+/** Ctrl+Shift+Space starts and stops a meeting from ANY app — you are in the
+ *  call, not in this window, when you need it. A global shortcut is the only
+ *  way to hear it; it is registered while Stapler is enabled and dropped the
+ *  moment it is switched off, so a disabled feature holds no key. The
+ *  renderer owns the recorder; main only forwards the press. */
+const STAPLER_SHORTCUT = 'CommandOrControl+Shift+Space';
+function syncStaplerShortcut(): void {
+  if (!app.isReady()) return;
+  const want = readConfig().staplerEnabled === true;
+  const have = globalShortcut.isRegistered(STAPLER_SHORTCUT);
+  if (want && !have) {
+    try {
+      globalShortcut.register(STAPLER_SHORTCUT, () => {
+        const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : BrowserWindow.getAllWindows()[0];
+        if (!win) return;
+        win.webContents.send('stapler:toggle');
+      });
+    } catch { /* another app owns the chord — the in-app shortcut still works */ }
+  } else if (!want && have) {
+    globalShortcut.unregister(STAPLER_SHORTCUT);
+  }
+}
+
 // ─── IPC: Realtime Michael (voice orchestrator — ephemeral token mint, rt-1) ──
 // MAIN owns the BYOK OpenAI key (encrypted broker, apikey:openai) and mints a
 // short-lived EPHEMERAL client secret; the real key never crosses IPC. All wiring
@@ -5381,6 +5471,9 @@ app.whenReady().then(() => {
   // setMicGate(true)); macOS TCC stays a second gate regardless.
   if (readConfig().realtimeVoiceEnabled) writeConfig({ realtimeVoiceEnabled: false });
 
+  // Stapler's global start/stop chord, while the feature is on.
+  syncStaplerShortcut();
+
   // Anonymous product analytics (PostHog) — the full contract lives in
   // TELEMETRY.md. No-op unless a build-time key was injected (official releases
   // only), and gated on DO_NOT_TRACK + the telemetryEnabled config (opt-out).
@@ -5500,6 +5593,7 @@ app.on('window-all-closed', () => {
 // exactly what's left to do.
 let analyticsFlushed = false;
 app.on('will-quit', (e) => {
+  globalShortcut.unregisterAll();
   if (analyticsFlushed) return;
   analyticsFlushed = true;
   e.preventDefault();

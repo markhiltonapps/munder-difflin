@@ -353,6 +353,13 @@ export interface HarnessConfig {
   groqApiKey?: string;
   /** Groq Whisper model id. Default 'whisper-large-v3-turbo' (fast, multilingual). */
   freeflowModel?: string;
+  /** Stapler meeting transcription. Default ON like Free Flow: the flag opens the
+   *  mic/system-audio permission gate; nothing is captured until the user
+   *  presses Record, and nothing reaches Groq without a key. */
+  staplerEnabled?: boolean;
+  /** Names and terms Whisper should spell right, one per line or comma-separated.
+   *  Sent as the recognition prompt with every Stapler chunk. */
+  staplerVocabulary?: string;
 
   // ─── Realtime Michael (premium speech-to-speech voice orchestrator) ─────────
   /** True ONLY while a Realtime Michael voice session is live: the renderer
@@ -459,6 +466,8 @@ const DEFAULTS: HarnessConfig = {
   freeflowEnabled: true,
   groqApiKey: undefined,
   freeflowModel: 'whisper-large-v3-turbo',
+  staplerEnabled: true,
+  staplerVocabulary: undefined,
   realtimeVoiceEnabled: false,
   realtimeIdleDisconnectMs: 180_000,
   webhookEnabled: false,

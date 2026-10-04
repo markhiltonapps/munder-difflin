@@ -12,6 +12,7 @@ import {
 import { useStore, type Agent } from '@/store/store';
 import { useRestoreTeam } from '@/hooks/useRestoreTeam';
 import { useRtl } from '@/i18n/useDirection';
+import { useStapler } from '@/stapler/session';
 import type { HarnessConfig } from '@/store/config';
 
 /**
@@ -38,6 +39,7 @@ import type { HarnessConfig } from '@/store/config';
 
 /** Command Center tabs the rail links to, in rail order. */
 const SURFACES: { key: string; labelKey: string; icon: IconName }[] = [
+  { key: 'stapler',  labelKey: 'officeSidebar.stapler',      icon: 'mic' },
   { key: 'tasks',    labelKey: 'officeSidebar.tasks',        icon: 'check' },
   { key: 'human',    labelKey: 'officeSidebar.inbox',        icon: 'bell' },
   { key: 'triggers', labelKey: 'officeSidebar.automations',  icon: 'clock' },
@@ -70,6 +72,8 @@ export function OfficeSidebar({ config }: OfficeSidebarProps) {
   const { restoring, autoRestoring, restoreTeam } = useRestoreTeam(config);
   const restoreBusy = restoring || autoRestoring;
   const god = agents.find(a => a.isGod);
+  // A meeting being recorded shows on the Stapler row wherever you are.
+  const staplerRecording = useStapler().status === 'recording';
 
   // Hive tasks, polled like the floor strip does: the "asked you" chips and
   // the doing-count stickies come from tasks.json, not from the agent record.
@@ -259,6 +263,17 @@ export function OfficeSidebar({ config }: OfficeSidebarProps) {
                 <span style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {t(s.labelKey)}
                 </span>
+                {s.key === 'stapler' && staplerRecording && (
+                  <span
+                    title={t('officeSidebar.recording')}
+                    style={{
+                      flexShrink: 0, height: 16, padding: '0 5px', boxSizing: 'border-box',
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
+                      background: 'var(--cth-coral)', color: 'var(--cth-ink-900)',
+                      fontFamily: 'var(--cth-font-display)', fontSize: 7, lineHeight: '12px'
+                    }}
+                  >{t('officeSidebar.rec')}</span>
+                )}
                 {count > 0 && (
                   <span
                     title={t('officeSidebar.waitingOnYou', { count })}

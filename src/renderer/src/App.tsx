@@ -33,6 +33,7 @@ import { FullscreenTerminal } from '@/components/FullscreenTerminal';
 import { TaskDetailOverlay } from '@/components/TaskDetailOverlay';
 import { IdePanel } from '@/ide/IdePanel';
 import { useHoldOptionToTalk } from '@/freeflow/holdOption';
+import { staplerSession } from '@/stapler/session';
 import brandLogo from '@brand/logo.png?url';
 
 // Injected at build time from package.json (see electron.vite.config.ts).
@@ -145,6 +146,35 @@ export function App() {
   // for whichever agent the user is viewing; gated on the flag, terminal-safe
   // (solo-hold threshold, aborts on any other key). See freeflow/holdOption.ts.
   useHoldOptionToTalk();
+
+  // Stapler: Ctrl+Shift+Space starts or stops a meeting. Main registers it as
+  // a GLOBAL shortcut while Stapler is enabled (you are in the call, not in
+  // this window, when you need it) and forwards the press here. A global
+  // registration also swallows the press when this window is focused, so the
+  // window's own listener is only a fallback for when another app already owns
+  // the chord and main's register() failed: it waits a beat and acts only if
+  // the forwarded press never arrived.
+  useEffect(() => {
+    const toggle = (): void => {
+      const starting = !staplerSession.isRecording();
+      staplerSession.toggle();
+      // Starting from the chord: bring the tab up so the transcript is in view.
+      if (starting) {
+        const s = useStore.getState();
+        const god = s.agents.find((a) => a.isGod);
+        if (god) { s.select(god.id); s.requestCommandCenterTab('stapler'); }
+      }
+    };
+    let lastForwarded = 0;
+    const unsub = window.cth.onStaplerToggle?.(() => { lastForwarded = Date.now(); toggle(); }) ?? (() => {});
+    const onKey = (e: KeyboardEvent): void => {
+      if (!(e.ctrlKey || e.metaKey) || !e.shiftKey || e.code !== 'Space') return;
+      e.preventDefault();
+      setTimeout(() => { if (Date.now() - lastForwarded > 300) toggle(); }, 150);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => { unsub(); window.removeEventListener('keydown', onKey, true); };
+  }, []);
 
   // Config subscription — the copy loaded above would otherwise go stale the
   // moment anything saves a setting.

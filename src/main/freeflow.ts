@@ -41,6 +41,10 @@ export interface TranscribeOptions {
   model?: string;
   /** Optional ISO-639-1 language hint to improve accuracy/latency. */
   language?: string;
+  /** Optional spelling hint (names, product terms) — Whisper's `prompt` field,
+   *  which biases recognition toward the words in it. Stapler builds it from
+   *  the vocabulary the user keeps in Settings. */
+  prompt?: string;
 }
 
 export interface TranscribeResult {
@@ -72,6 +76,7 @@ export async function transcribeWithGroq(opts: TranscribeOptions): Promise<Trans
   // parse defensively; we ask for json and read `.text`.
   form.append('response_format', 'json');
   if (opts.language) form.append('language', opts.language);
+  if (opts.prompt) form.append('prompt', opts.prompt);
   form.append('file', new Blob([toArrayBuffer(bytes)], { type: mimeType }), filename);
 
   const controller = new AbortController();
