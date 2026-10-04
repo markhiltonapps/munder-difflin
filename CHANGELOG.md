@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Move to another computer.** Settings → General gets **export office** and **import office**.
+  Export packs the office — every agent, their memory, inboxes, tasks, notes, meetings, screenshots
+  and your settings — into one `.tar.gz`. Import on the other machine reads the file, shows every
+  folder the agents worked in with a guess for where it is now (a Windows `C:\Users\you\work`
+  becomes `/Users/you/work` on a Mac), lets you correct the guesses and pick the new home, names
+  the secrets that live in the old keychain and have to be typed again, then rewrites every path
+  in the registry, roster, notes and settings and restarts into the moved office. Git worktrees do
+  not travel (an agent's branch lives in its repository); nothing else is left behind. The same
+  team comes back with its memory and inboxes; agents start a fresh conversation there and read
+  their memory and the board on wake-up.
 - **The floating Stapler.** A small window that floats over every app, off until you turn it on
   from the Stapler tab. Closed it is your clone's face, with a red ring while a meeting is being
   recorded; drag it by the grip above the face, and it remembers where you put it and comes back on

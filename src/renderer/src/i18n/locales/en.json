@@ -329,6 +329,26 @@
     "resetConfirm": {
       "body": "This permanently erases all of {{godName}}'s memories and the entire hive, and cannot be undone. Any running sessions will be terminated and the app will relaunch into onboarding. Are you sure?"
     },
+    "move": {
+      "title": "Move to another computer",
+      "desc": "Export packs this office — every agent, their memory, inboxes, tasks, notes, meetings and your settings — into one file. Import that file on the other machine and the same team comes back. Agents start a fresh conversation there, but they read their memory and the board on wake-up and carry on.",
+      "export": "export office…",
+      "import": "import office…",
+      "exported": "Exported {{count}} agents to {{path}}. Keep it private: it holds your settings and keys.",
+      "planSummary": "Export from {{platform}}, {{date}} (app {{version}}) — {{count}} agents.",
+      "newHome": "Home folder on this computer",
+      "newHomeHint": "Where the office will live here. A folder that already holds an office is replaced by the imported one.",
+      "folders": "Where the agents' folders are now",
+      "foldersHint": "Each folder the agents worked in, and the best guess for where it is on this computer. Correct any that are wrong — clone the repositories there first.",
+      "folderNow": "Where {{folder}} is now",
+      "secrets": "To re-enter after the move",
+      "secretsHint": "These live in the other computer's keychain and did not travel:",
+      "warning": "Git worktrees do not travel (an agent's branch lives in its repository — commit or push before you move). The app restarts into the imported office.",
+      "browse": "browse…",
+      "importRestart": "import & restart",
+      "importing": "importing…",
+      "restarting": "Restarting into the imported office…"
+    },
     "general": {
       "homeFolder": "Home folder",
       "environment": "Environment",

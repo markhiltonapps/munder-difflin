@@ -52,6 +52,9 @@ import {
 import { transcribeWithGroq, DEFAULT_GROQ_MODEL } from './freeflow';
 import { StaplerStore } from './stapler';
 import { StaplerWindows, registerStaplerWindowIpc } from './staplerWindow';
+import { exportOffice, inspectArchive, importOffice } from './officeMove';
+import { defaultArchiveName, guessTarget, type Platform as MovePlatform } from '../shared/officeMove';
+import { hasOpenAiKey } from './realtime';
 import { isMeetingId, vocabularyPrompt, type StaplerMeeting } from '../shared/stapler';
 import { registerRealtimeIpc } from './realtime';
 import { registerRealtimeActionIpc } from './realtimeActions';
@@ -3343,6 +3346,123 @@ ipcMain.handle('config:changeHome', async (_evt, payload: unknown) => {
   app.relaunch();
   app.exit(0);
   return { ok: true as const }; // unreachable (process exits) — typed for the renderer
+});
+
+// ─── IPC: move the office to another computer ───────────────────────────────
+// Export packs the harness home's office folders + settings + a manifest into
+// one .tar.gz; import unpacks into a home, rewrites every path the other
+// machine wrote, applies the settings and relaunches. See main/officeMove.ts.
+const movePlatform = (): MovePlatform => (process.platform === 'win32' ? 'win32' : process.platform === 'darwin' ? 'darwin' : 'linux');
+
+/** Secrets held by the OS keychain: they do not travel, so the manifest names
+ *  them for the user to re-enter. Labels only — never the values. */
+function secretsToReenter(): string[] {
+  const out: string[] = [];
+  try {
+    for (const r of integrations.listRecordsRedacted()) if (r.hasSecret) out.push(r.label || r.id);
+  } catch { /* none */ }
+  try { if (hasOpenAiKey()) out.push('OpenAI API key (voice / engines)'); } catch { /* none */ }
+  return out;
+}
+
+ipcMain.handle('office:export', async (evt) => {
+  const win = BrowserWindow.fromWebContents(evt.sender);
+  const cfg = readConfig();
+  if (!cfg.harnessHome) return { ok: false as const, error: 'no home folder yet' };
+  const res = await dialog.showSaveDialog(win ?? undefined as never, {
+    title: 'Export the office',
+    defaultPath: join(app.getPath('documents'), defaultArchiveName()),
+    filters: [{ name: 'Office export', extensions: ['tar.gz', 'tgz'] }]
+  });
+  if (res.canceled || !res.filePath) return { ok: false as const, error: 'cancelled' };
+  let userHome: string | null = null;
+  try { userHome = homedir(); } catch { /* unknown */ }
+  const out = await exportOffice({
+    home: cfg.harnessHome,
+    config: cfg as unknown as Record<string, unknown>,
+    dest: res.filePath,
+    appVersion: app.getVersion(),
+    platform: movePlatform(),
+    userHome,
+    secretsToReenter: secretsToReenter()
+  });
+  return out.ok ? { ok: true as const, path: out.path, agentCount: out.manifest.agentCount, included: out.manifest.included } : out;
+});
+
+/** Pick an archive and read its manifest; return it with a guess for every
+ *  root so the Settings UI can show the mapping for correction. */
+ipcMain.handle('office:inspect', async (evt) => {
+  const win = BrowserWindow.fromWebContents(evt.sender);
+  const res = await dialog.showOpenDialog(win ?? undefined as never, {
+    title: 'Import an office export',
+    properties: ['openFile'],
+    filters: [{ name: 'Office export', extensions: ['gz', 'tgz'] }, { name: 'All files', extensions: ['*'] }]
+  });
+  if (res.canceled || res.filePaths.length === 0) return { ok: false as const, error: 'cancelled' };
+  const archive = res.filePaths[0];
+  const inspected = await inspectArchive(archive);
+  if (!inspected.ok) return inspected;
+  const m = inspected.manifest;
+  const myHome = homedir();
+  const target = movePlatform();
+  const cfg = readConfig();
+  return {
+    ok: true as const,
+    archive,
+    manifest: m,
+    platform: target,
+    suggestedHome: cfg.harnessHome ?? join(myHome, 'munder-difflin'),
+    // The old harness home is handled by import itself (→ the new home), so
+    // only the agents' roots need the user's eye.
+    mapping: m.roots
+      .filter((r) => r !== m.harnessHome)
+      .map((from) => ({ from, to: guessTarget(from, m.userHome, myHome, target) }))
+  };
+});
+
+ipcMain.handle('office:import', async (_evt, arg: unknown) => {
+  const a = (arg ?? {}) as { archive?: unknown; newHome?: unknown; mapping?: unknown };
+  if (typeof a.archive !== 'string' || typeof a.newHome !== 'string' || !a.newHome.trim()) return { ok: false as const, error: 'invalid args' };
+  const newHome = expandTilde(a.newHome.trim());
+  const mapping = (Array.isArray(a.mapping) ? a.mapping : [])
+    .filter((m): m is { from: string; to: string } => !!m && typeof m.from === 'string' && typeof m.to === 'string' && !!m.from && !!m.to);
+  const ensured = ensureHarnessHome(newHome);
+  if (!ensured.ok) return { ok: false as const, error: ensured.error ?? 'could not create the home folder' };
+
+  // Quiesce everything that reads or writes the home: the import may land in
+  // the folder the hive is live on. Same teardown as changeHome.
+  try { clearMissionTimers(); } catch (e) { console.error('[officeImport] clearMissionTimers:', e); }
+  try { clearContextTimers(); } catch (e) { console.error('[officeImport] clearContextTimers:', e); }
+  try { stopWebhookDoneObserver(); } catch (e) { console.error('[officeImport] stopWebhookDoneObserver:', e); }
+  try { stopEphemeralWorkerWatcher(); } catch (e) { console.error('[officeImport] stopWorkerWatcher:', e); }
+  try { integrationBroker.stop(); } catch (e) { console.error('[officeImport] broker.stop:', e); }
+  try { hive.stopRouter(); } catch (e) { console.error('[officeImport] stopRouter:', e); }
+  try { hookServer.stop(); } catch (e) { console.error('[officeImport] hookServer.stop:', e); }
+  try { stopSlackServer(); } catch (e) { console.error('[officeImport] slack.stop:', e); }
+  try { stopWebhookServer(); } catch (e) { console.error('[officeImport] webhook.stop:', e); }
+  try { memory.stop(); } catch (e) { console.error('[officeImport] memory.stop:', e); }
+  try { reflector.stop(); } catch (e) { console.error('[officeImport] reflector.stop:', e); }
+  try { ptyManager.killAll(); } catch (e) { console.error('[officeImport] killAll:', e); }
+
+  const out = await importOffice({ archive: a.archive, newHome, mapping, target: movePlatform() });
+  if (!out.ok) {
+    // Nothing was repointed: bring the services back against the unchanged home.
+    bootstrapHiveServices();
+    const cfg = readConfig();
+    if (cfg.slackEnabled && cfg.slackSigningSecret) void startSlackServer();
+    reconcileWebhookServer();
+    return out;
+  }
+  // Imported settings win where they exist; this machine's config fills the
+  // rest. The home is the new one; onboarding is done by definition.
+  const merged = { ...readConfig(), ...out.config, harnessHome: newHome, onboardingComplete: true } as Partial<HarnessConfig>;
+  // The other machine's live-session flags must not come across as truths.
+  merged.realtimeVoiceEnabled = false;
+  allowQuit = true;
+  writeConfig(merged);
+  app.relaunch();
+  app.exit(0);
+  return { ok: true as const, rewrittenFiles: out.rewrittenFiles, warnings: out.warnings }; // unreachable
 });
 
 // ─── IPC: filesystem (sandboxed to a root) ──────────────────────────────────

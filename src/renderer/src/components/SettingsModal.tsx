@@ -14,6 +14,7 @@ import {
 import { PixelPanel } from './PixelPanel';
 import { PixelButton } from './PixelButton';
 import { UpdatesSection } from './UpdatesSection';
+import { OfficeMoveSection } from './OfficeMoveSection';
 import { SettingsHeroCard } from './SettingsHeroCard';
 import { SetupPanel } from './SetupPanel';
 import { Icon } from './Icon';
@@ -1028,6 +1029,11 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           <PixelButton variant="secondary" size="sm" onClick={pickNewHome}>{t('settings.change')}</PixelButton>
                         </div>
                       </div>
+
+                      <div style={{ height: 1, background: 'var(--cth-ink-300)' }} />
+
+                      {/* Move to another computer: export the office, import it elsewhere. */}
+                      <OfficeMoveSection sectionHead={sectionHead} />
 
                       <div style={{ height: 1, background: 'var(--cth-ink-300)' }} />
 

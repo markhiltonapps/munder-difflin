@@ -1,5 +1,6 @@
 import type { StaplerMeeting, StaplerMeetingSummary } from '../shared/stapler';
 import type { Rect as StaplerRect, StaplerReport } from '../shared/staplerWidget';
+import type { OfficeManifest, PathMapping } from '../shared/officeMove';
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
 import type { AgentProvider } from '../shared/agentProvider';
 import type { HireManifest } from '../shared/hire';
@@ -1276,6 +1277,22 @@ const api = {
     audio: ArrayBuffer | Uint8Array; mimeType?: string; filename?: string; language?: string;
   }): Promise<{ ok: boolean; text?: string; error?: string }> =>
     ipcRenderer.invoke('freeflow:transcribe', arg),
+
+  // ─── Move the office to another computer ──────────────────────────────────────
+  /** Save dialog → one .tar.gz of the office folders + settings + manifest. */
+  officeExport: (): Promise<
+    { ok: true; path: string; agentCount: number; included: string[] } | { ok: false; error: string }
+  > => ipcRenderer.invoke('office:export'),
+  /** Open dialog → the archive's manifest plus a guessed path mapping to confirm. */
+  officeInspect: (): Promise<
+    { ok: true; archive: string; manifest: OfficeManifest; platform: 'win32' | 'darwin' | 'linux'; suggestedHome: string; mapping: PathMapping[] }
+    | { ok: false; error: string }
+  > => ipcRenderer.invoke('office:inspect'),
+  /** Unpack into `newHome`, rewrite paths per `mapping`, apply settings, RELAUNCH.
+   *  Resolves only on failure (success exits the process). */
+  officeImport: (arg: { archive: string; newHome: string; mapping: PathMapping[] }): Promise<
+    { ok: true; rewrittenFiles: number; warnings: string[] } | { ok: false; error: string }
+  > => ipcRenderer.invoke('office:import', arg),
 
   // ─── Stapler (meeting transcription: You + Them → transcript → any agent) ─────
   /** Persist Stapler settings (flag / vocabulary). The Groq key is the Free Flow one. */
