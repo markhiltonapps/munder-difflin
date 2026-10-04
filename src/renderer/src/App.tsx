@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useStore, selectedAgent } from '@/store/store';
+import { useTranslation } from 'react-i18next';
+import { useStore, selectedAgent, OFFICE_SIDEBAR_MIN, OFFICE_SIDEBAR_MAX, OFFICE_SIDEBAR_DEFAULT } from '@/store/store';
 import { startMockLoop, stopMockLoop } from '@/store/mockEvents';
 import type { HarnessConfig } from '@/store/config';
 import { DEFAULT_ORG_TRIGGER } from '@shared/triggers';
@@ -12,6 +13,7 @@ import { useArabicTerminalSync } from '@/terminal/useArabicTerminalSync';
 import { MemoryPanel } from '@/components/MemoryPanel';
 import { AgentDetailPanel } from '@/components/AgentDetailPanel';
 import { AgentStrip } from '@/components/AgentStrip';
+import { OfficeSidebar } from '@/components/OfficeSidebar';
 import { AddAgentModal } from '@/components/AddAgentModal';
 import { MichaelBooting } from '@/components/MichaelBooting';
 import { OnboardingWizard } from '@/components/OnboardingWizard';
@@ -37,6 +39,7 @@ import brandLogo from '@brand/logo.png?url';
 declare const __APP_VERSION__: string;
 
 export function App() {
+  const { t } = useTranslation();
   // Point every {{godName}} string at the orchestrator's real, renameable name.
   useGodNameSync();
   // Mirror the document only for a user who has picked an RTL app language.
@@ -55,6 +58,13 @@ export function App() {
   const appThemeNow = useAppTheme();
   const sidebarWidth = useStore(s => s.sidebarWidth);
   const setSidebarWidth = useStore(s => s.setSidebarWidth);
+  // Roster layout: the classic strip under the floor, or the office sidebar
+  // on the left. Both read the same roster; only the shape differs.
+  const layoutMode = useStore(s => s.layoutMode);
+  const setLayoutMode = useStore(s => s.setLayoutMode);
+  const officeSidebarWidth = useStore(s => s.officeSidebarWidth);
+  const setOfficeSidebarWidth = useStore(s => s.setOfficeSidebarWidth);
+  const sidebarLayout = layoutMode === 'sidebar';
   const ideOpen = useStore(s => s.ideOpen);
   const setIdeOpen = useStore(s => s.setIdeOpen);
 
@@ -310,6 +320,27 @@ export function App() {
         }}>
           {config.autoMode ? 'auto mode on' : 'auto mode off'}
         </span>
+        {/* Layout toggle: the classic card strip under the floor, or the office
+            sidebar on the left with the surfaces and the grouped roster. A
+            working preference, so it persists (store.layoutMode). */}
+        <button
+          className="cth-titlebar-nodrag cth-tip"
+          onClick={() => setLayoutMode(sidebarLayout ? 'classic' : 'sidebar')}
+          data-tip={sidebarLayout ? t('officeSidebar.layoutToClassic') : t('officeSidebar.layoutToSidebar')}
+          aria-label={sidebarLayout ? t('officeSidebar.layoutToClassic') : t('officeSidebar.layoutToSidebar')}
+          aria-pressed={sidebarLayout}
+          style={{
+            marginLeft: 'auto',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 28, height: 28, padding: 0,
+            background: sidebarLayout ? 'var(--cth-lemon)' : 'var(--cth-paper-100)',
+            boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
+            border: 'none', borderRadius: 2, cursor: 'pointer',
+            color: 'var(--cth-ink-900)'
+          }}
+        >
+          <Icon name="sidebar" />
+        </button>
         {/* v0.3.4: theme + fullscreen live HERE (top right), not buried in the
             terminal header — and the theme darkens the whole app, terminals
             included (design/theme.ts + tokens.css dark block). */}
@@ -333,7 +364,6 @@ export function App() {
           data-tip={appThemeNow === 'dark' ? 'Light theme' : 'Dark theme'}
           aria-label="Toggle dark mode"
           style={{
-            marginLeft: 'auto',
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             width: 28, height: 28, padding: 0,
             background: 'var(--cth-paper-100)',
@@ -398,6 +428,23 @@ export function App() {
         padding: 16,
         gap: 0
       }}>
+        {sidebarLayout && (
+          <>
+            <div style={{ width: officeSidebarWidth, flexShrink: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+              <OfficeSidebar config={config} />
+            </div>
+            <SidebarSplitter
+              panel="start"
+              width={officeSidebarWidth}
+              onChange={setOfficeSidebarWidth}
+              // The floor must keep room beside BOTH rails.
+              viewportWidth={vpWidth - sidebarWidth}
+              min={OFFICE_SIDEBAR_MIN}
+              max={OFFICE_SIDEBAR_MAX}
+              resetWidth={OFFICE_SIDEBAR_DEFAULT}
+            />
+          </>
+        )}
         <div style={{ flex: 1, minHeight: 0, minWidth: 0, position: 'relative' }}>
           <OfficeFloor />
           <MemoryPanel />
@@ -429,7 +476,7 @@ export function App() {
         <SidebarSplitter
           width={sidebarWidth}
           onChange={setSidebarWidth}
-          viewportWidth={vpWidth}
+          viewportWidth={sidebarLayout ? vpWidth - officeSidebarWidth : vpWidth}
         />
 
         <div style={{
@@ -477,7 +524,7 @@ export function App() {
         </div>
       </div>
 
-      <AgentStrip config={config} />
+      {!sidebarLayout && <AgentStrip config={config} />}
 
       {addAgentOpen && (
         <AddAgentModal

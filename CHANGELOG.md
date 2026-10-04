@@ -8,6 +8,18 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **The office sidebar: a second roster layout.** The title bar gets a layout toggle. Classic is the
+  card strip under the floor, unchanged. The sidebar layout puts a rail on the left with **Tasks,
+  Inbox, Automations, Memory and Capabilities** at the top — each one click to the matching Command
+  Center tab, with the Inbox carrying a count of open questions — and every agent below it, your
+  clone first and the rest grouped under the repository they are checked out in. A row shows the
+  status, a **live line** (what the agent is doing, else the last thing it said), an **asked you**
+  chip when a hive task it owns is waiting on your answer, the doing-count sticky, and the private
+  note as bullets. The search box filters rows by name, project, job and **note text**, rows drag to
+  reorder (the same persisted order as the strip), the rail's edge drags to widen, and one setting
+  shows **agents and notes only**. Nothing new under the hood: same roster, same panels, a different
+  shape — and the shape is remembered.
+
 - **Tasks show their id.** The one thing people actually refer to a card by — `bmt-12` — was not
   displayed anywhere: not on the kanban card, which printed only the title and the assignee, and not
   in the detail view behind it. It now leads the card above the title, and leads the detail view's

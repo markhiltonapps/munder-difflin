@@ -131,6 +131,25 @@
     "messages": "messages",
     "traces": "traces"
   },
+  "officeSidebar": {
+    "title": "OFFICE",
+    "searchPlaceholder": "search agents and notes…",
+    "searchAria": "Search agents by name, project, job or note",
+    "tasks": "Tasks",
+    "inbox": "Inbox",
+    "automations": "Automations",
+    "memory": "Memory",
+    "capabilities": "Capabilities",
+    "waitingOnYou": "{{count}} waiting on your answer",
+    "askedYou": "ASKED YOU",
+    "askedYouTitle": "{{name}} is waiting on your answer ({{count}}) — open the Inbox",
+    "noOrchestrator": "Available once your clone is on the floor",
+    "agentsAndNotesOnly": "Agents and notes only — hide the shortcuts and live lines",
+    "showEverything": "Show the shortcuts and live lines again",
+    "noMatches": "No agent or note matches “{{query}}”",
+    "layoutToSidebar": "Switch to the sidebar layout: Tasks, Inbox, Automations, Memory and Capabilities on the left, agents grouped by repository",
+    "layoutToClassic": "Switch to the classic layout: the agent strip under the floor"
+  },
   "toolWaterfall": {
     "fresh": "fresh {{tokens}}t",
     "cache": "cache {{tokens}}t ({{pct}}%)",

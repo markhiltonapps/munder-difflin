@@ -131,6 +131,25 @@
     "messages": "消息",
     "traces": "追踪"
   },
+  "officeSidebar": {
+    "title": "办公室",
+    "searchPlaceholder": "搜索智能体和笔记…",
+    "searchAria": "按名称、项目、职责或笔记搜索智能体",
+    "tasks": "任务",
+    "inbox": "收件箱",
+    "automations": "自动化",
+    "memory": "记忆",
+    "capabilities": "能力",
+    "waitingOnYou": "{{count}} 项在等你回答",
+    "askedYou": "在问你",
+    "askedYouTitle": "{{name}} 在等你回答（{{count}}）— 打开收件箱",
+    "noOrchestrator": "你的分身上岗后可用",
+    "agentsAndNotesOnly": "只显示智能体和笔记 — 隐藏快捷入口和实时一行",
+    "showEverything": "重新显示快捷入口和实时一行",
+    "noMatches": "没有智能体或笔记匹配“{{query}}”",
+    "layoutToSidebar": "切换到侧栏布局：左侧是任务、收件箱、自动化、记忆和能力，智能体按仓库分组",
+    "layoutToClassic": "切换到经典布局：智能体卡片条位于楼层下方"
+  },
   "toolWaterfall": {
     "fresh": "新计 {{tokens}}t",
     "cache": "缓存 {{tokens}}t（{{pct}}%）",

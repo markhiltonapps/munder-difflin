@@ -9,14 +9,20 @@ export interface SidebarSplitterProps {
   viewportWidth: number;
   min?: number;
   max?: number;
+  /** Which side of the handle the panel it resizes sits on. 'end' (default)
+   *  is the right-hand detail sidebar: drag left → wider. 'start' is the
+   *  office sidebar on the left: drag right → wider. */
+  panel?: 'start' | 'end';
+  /** Width restored by a double-click. */
+  resetWidth?: number;
 }
 
 /**
- * Vertical drag handle. Sits between the floor canvas (left) and the sidebar
- * (right). Drag left → wider sidebar. Cursor + pixel-stripe affordance.
+ * Vertical drag handle. Sits between the floor canvas and a sidebar. Dragging
+ * away from the panel widens it. Cursor + pixel-stripe affordance.
  */
 export function SidebarSplitter({
-  width, onChange, viewportWidth, min = 320, max = 1200
+  width, onChange, viewportWidth, min = 320, max = 1200, panel = 'end', resetWidth = 420
 }: SidebarSplitterProps) {
   const startRef = useRef<{ clientX: number; width: number } | null>(null);
   const [active, setActive] = useState(false);
@@ -24,7 +30,12 @@ export function SidebarSplitter({
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (!startRef.current) return;
-      const delta = startRef.current.clientX - e.clientX; // left drag = positive delta → grow sidebar
+      // Moving away from the panel is a positive delta → grow it. The sign
+      // flips with the side the panel is on, not with the UI direction: the
+      // handle is a physical edge and the panel is physically to one side of it.
+      const delta = panel === 'end'
+        ? startRef.current.clientX - e.clientX
+        : e.clientX - startRef.current.clientX;
       const clampMax = Math.min(max, Math.max(min, viewportWidth - 360));
       const next = Math.min(clampMax, Math.max(min, startRef.current.width + delta));
       onChange(next);
@@ -45,7 +56,7 @@ export function SidebarSplitter({
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [active, viewportWidth, min, max, onChange]);
+  }, [active, viewportWidth, min, max, onChange, panel]);
 
   return (
     <div
@@ -54,7 +65,7 @@ export function SidebarSplitter({
         setActive(true);
         e.preventDefault();
       }}
-      onDoubleClick={() => onChange(420)}
+      onDoubleClick={() => onChange(resetWidth)}
       title="Drag to resize · double-click to reset"
       style={{
         width: 10,

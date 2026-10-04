@@ -161,6 +161,13 @@ export interface QueuedMessage {
 // v0.3.4: at-a-glance branch/status/log without opening the IDE.
 export type SidebarTab = 'terminal' | 'messages' | 'traces' | 'git';
 
+/** How the roster is laid out around the floor.
+ *  'classic' — the horizontal card strip under the floor (the original).
+ *  'sidebar' — a left rail: Tasks / Inbox / Automations / Memory / Capabilities
+ *  at the top, then every agent grouped under its repository, with a live line
+ *  and an "asked you" chip per row. Same agents, same panels, different shape. */
+export type LayoutMode = 'classic' | 'sidebar';
+
 /** Lifecycle of the god agent ("Michael") bootstrap on launch.
  *  'booting' until his PTY is confirmed live, then 'ready' (or 'failed' if the
  *  spawn errored). The empty-floor UI shows a loader while 'booting' so users
@@ -208,6 +215,13 @@ interface State {
   ideAgentId: string | null;
   sidebarWidth: number;
   sidebarTab: SidebarTab;
+  /** Roster layout (see LayoutMode). Persisted; written only by the title-bar toggle. */
+  layoutMode: LayoutMode;
+  /** Width of the left office sidebar in 'sidebar' layout. Persisted. */
+  officeSidebarWidth: number;
+  /** "Agents and notes only": hide the surface shortcuts and live lines so the
+   *  rail is just the roster and what you wrote on it. Persisted. */
+  officeSidebarCompact: boolean;
   godStatus: GodStatus;
   /** Per-agent outgoing message queue (agent id → messages awaiting delivery).
    *  Lets the user keep "talking" to a busy agent: messages park here and are
@@ -335,6 +349,9 @@ interface State {
   setIdeOpen: (open: boolean, agentId?: string | null) => void;
   setIdeInitialFile: (path: string | null) => void;
   setSidebarWidth: (px: number) => void;
+  setLayoutMode: (mode: LayoutMode) => void;
+  setOfficeSidebarWidth: (px: number) => void;
+  setOfficeSidebarCompact: (compact: boolean) => void;
   setSidebarTab: (tab: SidebarTab) => void;
   /** Drop persisted agents whose PTY is no longer alive in the main process.
    *  Called once at startup so a renderer reload (e.g. after the laptop sleeps)
@@ -344,6 +361,9 @@ interface State {
 
 const LS_SIDEBAR_WIDTH = 'cth.sidebarWidth';
 const LS_SIDEBAR_TAB = 'cth.sidebarTab';
+const LS_LAYOUT_MODE = 'cth.layoutMode';
+const LS_OFFICE_SIDEBAR_WIDTH = 'cth.officeSidebarWidth';
+const LS_OFFICE_SIDEBAR_COMPACT = 'cth.officeSidebarCompact';
 const LS_AGENTS = 'cth.agents';
 const LS_ARCHIVED = 'cth.archivedAgents';
 const LS_RESTORABLE = 'cth.restorableAgents';
@@ -627,6 +647,32 @@ const initialSidebarTab: SidebarTab = (() => {
   } catch { /* noop */ }
   return 'terminal';
 })();
+/** Office sidebar bounds. Narrow enough for a 13" screen beside the floor and
+ *  the detail panel, wide enough that a live line is more than three words. */
+export const OFFICE_SIDEBAR_MIN = 220;
+export const OFFICE_SIDEBAR_MAX = 560;
+export const OFFICE_SIDEBAR_DEFAULT = 280;
+const initialLayoutMode: LayoutMode = (() => {
+  try {
+    const v = window.localStorage.getItem(LS_LAYOUT_MODE);
+    if (v === 'classic' || v === 'sidebar') return v;
+  } catch { /* noop */ }
+  return 'classic';
+})();
+const initialOfficeSidebarWidth = (() => {
+  try {
+    const v = window.localStorage.getItem(LS_OFFICE_SIDEBAR_WIDTH);
+    const n = v ? parseInt(v, 10) : NaN;
+    if (!Number.isNaN(n) && n >= OFFICE_SIDEBAR_MIN && n <= OFFICE_SIDEBAR_MAX) return n;
+  } catch { /* noop */ }
+  return OFFICE_SIDEBAR_DEFAULT;
+})();
+const initialOfficeSidebarCompact = (() => {
+  try {
+    return window.localStorage.getItem(LS_OFFICE_SIDEBAR_COMPACT) === '1';
+  } catch { /* noop */ }
+  return false;
+})();
 
 /** Does the user want focus mode as their default view?
  *
@@ -689,6 +735,9 @@ export const useStore = create<State>((set, get) => ({
   ideAgentId: null,
   sidebarWidth: initialSidebarWidth,
   sidebarTab: initialSidebarTab,
+  layoutMode: initialLayoutMode,
+  officeSidebarWidth: initialOfficeSidebarWidth,
+  officeSidebarCompact: initialOfficeSidebarCompact,
   godStatus: 'booting',
   messageQueues: initialQueues,
   toolCounts: {},
@@ -1032,6 +1081,19 @@ export const useStore = create<State>((set, get) => ({
   setSidebarTab: (tab) => {
     try { window.localStorage.setItem(LS_SIDEBAR_TAB, tab); } catch { /* noop */ }
     set({ sidebarTab: tab });
+  },
+  setLayoutMode: (mode) => {
+    try { window.localStorage.setItem(LS_LAYOUT_MODE, mode); } catch { /* noop */ }
+    set({ layoutMode: mode });
+  },
+  setOfficeSidebarWidth: (px) => {
+    const clamped = Math.min(OFFICE_SIDEBAR_MAX, Math.max(OFFICE_SIDEBAR_MIN, Math.round(px)));
+    try { window.localStorage.setItem(LS_OFFICE_SIDEBAR_WIDTH, String(clamped)); } catch { /* noop */ }
+    set({ officeSidebarWidth: clamped });
+  },
+  setOfficeSidebarCompact: (compact) => {
+    try { window.localStorage.setItem(LS_OFFICE_SIDEBAR_COMPACT, compact ? '1' : '0'); } catch { /* noop */ }
+    set({ officeSidebarCompact: compact });
   }
 }));
 
