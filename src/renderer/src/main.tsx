@@ -1,6 +1,8 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { StaplerWidget } from './stapler/StaplerWidget';
+import { StaplerCrop } from './stapler/StaplerCrop';
 import brandLogo from '@brand/logo.png?url';
 import './design/global.css';
 import './i18n';
@@ -23,8 +25,14 @@ if (splashMark) {
 const root = document.getElementById('root');
 if (!root) throw new Error('No root element');
 
+// The floating Stapler and its crop overlay are separate windows on the same
+// bundle, picked by hash (main loads `index.html#stapler` / `#stapler-crop`).
+// Everything else is the office.
+const view = window.location.hash.replace(/^#/, '');
+const Root = view === 'stapler' ? StaplerWidget : view === 'stapler-crop' ? StaplerCrop : App;
+
 createRoot(root).render(
   <StrictMode>
-    <App />
+    <Root />
   </StrictMode>
 );

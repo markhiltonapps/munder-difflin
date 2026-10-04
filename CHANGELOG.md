@@ -8,6 +8,18 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **The floating Stapler.** A small window that floats over every app, off until you turn it on
+  from the Stapler tab. Closed it is your clone's face, with a red ring while a meeting is being
+  recorded; drag it by the grip above the face, and it remembers where you put it and comes back on
+  launch. Click it and the ring opens: **screenshot** (the screen freezes, you drag a region, the
+  region is remembered, up to eight shots go in one send with a note), **record message** (talk
+  for up to five minutes, read the transcript back, correct it, send), **record meeting** (the
+  same recorder as the tab, with the clock), **make invisible** (the window drops out of screen
+  shares and recordings, and does so by itself while it records), open office, reset position.
+  Everything it catches goes to the agent in the **To** menu, which remembers who you picked, as
+  a queued message delivered when that agent is free; screenshots travel as attached files the
+  way the composer sends them. The window never leaves a connected display: a monitor arriving,
+  leaving or changing resolution moves it back on screen.
 - **Stapler: meetings, transcribed, handed to an agent.** A new tab on the orchestrator's Command
   Center (and the first entry in the sidebar layout). Press **Record**, or **Ctrl+Shift+Space from
   any app**, when the call starts: your microphone is written as **You** and the call's audio as

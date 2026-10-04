@@ -48,6 +48,15 @@ export function StaplerTab() {
   }, []);
   useEffect(() => { void refresh(); }, [refresh, st.status, st.markdownPath]);
 
+  // The floating widget's state, kept in step by main's broadcast.
+  const [widget, setWidget] = useState<{ open: boolean; invisible: boolean }>({ open: false, invisible: false });
+  useEffect(() => {
+    let alive = true;
+    window.cth.staplerWidgetState().then((s) => { if (alive) setWidget(s); }).catch(() => { /* default */ });
+    const unsub = window.cth.onStaplerWidgetChanged((s) => setWidget(s));
+    return () => { alive = false; unsub(); };
+  }, []);
+
   const [loopback, setLoopback] = useState<boolean | null>(null);
   useEffect(() => {
     let alive = true;
@@ -64,6 +73,7 @@ export function StaplerTab() {
   }, [live, targetId]);
   const [instruction, setInstruction] = useState('');
   const [sendNote, setSendNote] = useState('');
+  const [widgetNote, setWidgetNote] = useState('');
   const [sending, setSending] = useState(false);
   const target = live.find((a) => a.id === targetId);
   const send = async () => {
@@ -151,8 +161,30 @@ export function StaplerTab() {
         {st.pending > 0 && (
           <span style={{ fontSize: 12, color: 'var(--cth-ink-500)' }}>{t('stapler.transcribing', { count: st.pending })}</span>
         )}
-        <span style={{ marginInlineStart: 'auto', fontSize: 11, color: 'var(--cth-ink-500)', whiteSpace: 'nowrap' }}>
-          {t('stapler.hotkey')}
+        <span style={{ marginInlineStart: 'auto', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+          <PixelButton
+            variant={widget.open ? 'primary' : 'secondary'}
+            size="sm"
+            onClick={() => { void window.cth.staplerWidgetToggle().then((r) => { if (!r.ok && r.error) setWidgetNote(r.error); }); }}
+          >
+            <span className="cth-tip cth-tip-wrap" data-tip={t('stapler.widgetTip')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <Icon name="expand" /> {widget.open ? t('stapler.widgetHide') : t('stapler.widgetShow')}
+            </span>
+          </PixelButton>
+          {widget.open && (
+            <PixelButton
+              variant={widget.invisible ? 'primary' : 'secondary'}
+              size="sm"
+              onClick={() => { void window.cth.staplerWidgetSetInvisible(!widget.invisible); }}
+            >
+              <span className="cth-tip cth-tip-wrap" data-tip={t('stapler.invisibleTip')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <Icon name="minimize" /> {widget.invisible ? t('stapler.visible') : t('stapler.invisible')}
+              </span>
+            </PixelButton>
+          )}
+        </span>
+        <span style={{ flexBasis: '100%', fontSize: 11, color: 'var(--cth-ink-500)' }}>
+          {t('stapler.hotkey')}{widgetNote ? ` · ${widgetNote}` : ''}
         </span>
         {st.error && (
           <span style={{ flexBasis: '100%', fontSize: 12, color: 'var(--cth-coral)' }}>{st.error}</span>

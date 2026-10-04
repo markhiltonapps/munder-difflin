@@ -51,6 +51,7 @@ import {
 } from './triggerHistory';
 import { transcribeWithGroq, DEFAULT_GROQ_MODEL } from './freeflow';
 import { StaplerStore } from './stapler';
+import { StaplerWindows, registerStaplerWindowIpc } from './staplerWindow';
 import { isMeetingId, vocabularyPrompt, type StaplerMeeting } from '../shared/stapler';
 import { registerRealtimeIpc } from './realtime';
 import { registerRealtimeActionIpc } from './realtimeActions';
@@ -4461,6 +4462,7 @@ ipcMain.handle('stapler:setConfig', (_evt, patch: unknown) => {
   if (typeof p.vocabulary === 'string') next.staplerVocabulary = p.vocabulary.trim().slice(0, 4000) || undefined;
   writeConfig(next);
   syncStaplerShortcut();
+  if (next.staplerEnabled === false) staplerWindows.close();
   return { ok: true };
 });
 
@@ -4493,6 +4495,21 @@ ipcMain.handle('stapler:save', (_evt, meeting: unknown) => {
   return stapler().save(m);
 });
 ipcMain.handle('stapler:delete', (_evt, id: unknown) => (isMeetingId(id) ? stapler().delete(id) : { ok: false, error: 'invalid id' }));
+
+// The floating Stapler (widget + crop overlay). Windows are created lazily;
+// nothing here touches the screen until the user turns the widget on.
+const staplerWindows = new StaplerWindows({
+  persist: { getKv: (k) => persist.getKv(k), setKv: (k, v) => persist.setKv(k, v) },
+  load: (win, hash) => {
+    if (isDev && process.env.ELECTRON_RENDERER_URL) win.loadURL(`${process.env.ELECTRON_RENDERER_URL}#${hash}`);
+    else win.loadFile(join(__dirname, '../renderer/index.html'), { hash });
+  },
+  preloadPath: join(__dirname, '../preload/index.js'),
+  getMainWindow: () => mainWindow,
+  shotsDir: () => join(staplerRoot(), 'stapler', 'shots'),
+  enabled: () => readConfig().staplerEnabled === true
+});
+registerStaplerWindowIpc(ipcMain, staplerWindows);
 
 /** Ctrl+Shift+Space starts and stops a meeting from ANY app — you are in the
  *  call, not in this window, when you need it. A global shortcut is the only
@@ -5473,6 +5490,9 @@ app.whenReady().then(() => {
 
   // Stapler's global start/stop chord, while the feature is on.
   syncStaplerShortcut();
+  // And the floating widget, if it was up last time. After createWindow()
+  // below has run, so the primary exists to relay to: deferred a tick.
+  setTimeout(() => { try { staplerWindows.restoreOnLaunch(); } catch { /* best-effort */ } }, 0);
 
   // Anonymous product analytics (PostHog) — the full contract lives in
   // TELEMETRY.md. No-op unless a build-time key was injected (official releases
@@ -5594,6 +5614,7 @@ app.on('window-all-closed', () => {
 let analyticsFlushed = false;
 app.on('will-quit', (e) => {
   globalShortcut.unregisterAll();
+  staplerWindows.destroyAll();
   if (analyticsFlushed) return;
   analyticsFlushed = true;
   e.preventDefault();

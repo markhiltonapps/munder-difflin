@@ -1,4 +1,5 @@
 import type { StaplerMeeting, StaplerMeetingSummary } from '../shared/stapler';
+import type { Rect as StaplerRect, StaplerReport } from '../shared/staplerWidget';
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
 import type { AgentProvider } from '../shared/agentProvider';
 import type { HireManifest } from '../shared/hire';
@@ -1302,6 +1303,52 @@ const api = {
     ipcRenderer.on('stapler:toggle', listener);
     return () => ipcRenderer.removeListener('stapler:toggle', listener);
   },
+
+  // ─── The floating Stapler ─────────────────────────────────────────────────────
+  // Primary-window side: report the recorder + roster, answer the widget.
+  /** Fire-and-forget: the recorder's state and the live roster, relayed to the
+   *  widget by main. Sent on every change and on request. */
+  staplerReport: (report: StaplerReport): void => { ipcRenderer.send('stapler:report', report); },
+  onStaplerRequestReport: (cb: () => void): (() => void) => {
+    const listener = (): void => cb();
+    ipcRenderer.on('stapler:requestReport', listener);
+    return () => ipcRenderer.removeListener('stapler:requestReport', listener);
+  },
+  /** A message composed in the widget (a voice note, screenshots) for an agent's queue. */
+  onStaplerDeliver: (cb: (arg: { agentId: string; text: string }) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, arg: { agentId: string; text: string }): void => cb(arg);
+    ipcRenderer.on('stapler:deliver', listener);
+    return () => ipcRenderer.removeListener('stapler:deliver', listener);
+  },
+  staplerWidgetToggle: (): Promise<{ ok: boolean; open: boolean; error?: string }> => ipcRenderer.invoke('stapler:widget:toggle'),
+  staplerWidgetState: (): Promise<{ open: boolean; invisible: boolean }> => ipcRenderer.invoke('stapler:widget:state'),
+  onStaplerWidgetChanged: (cb: (s: { open: boolean; invisible: boolean }) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, s: { open: boolean; invisible: boolean }): void => cb(s);
+    ipcRenderer.on('stapler:widgetChanged', listener);
+    return () => ipcRenderer.removeListener('stapler:widgetChanged', listener);
+  },
+  // Widget side.
+  staplerWidgetRequestReport: (): void => { ipcRenderer.send('stapler:widget:requestReport'); },
+  onStaplerReport: (cb: (r: StaplerReport) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, r: StaplerReport): void => cb(r);
+    ipcRenderer.on('stapler:report', listener);
+    return () => ipcRenderer.removeListener('stapler:report', listener);
+  },
+  staplerWidgetToggleMeeting: (): void => { ipcRenderer.send('stapler:widget:toggleMeeting'); },
+  staplerWidgetDeliver: (arg: { agentId: string; text: string }): void => { ipcRenderer.send('stapler:widget:deliver', arg); },
+  staplerWidgetRing: (open: boolean): void => { ipcRenderer.send('stapler:widget:ring', open); },
+  staplerWidgetSetInvisible: (on: boolean): Promise<{ invisible: boolean }> => ipcRenderer.invoke('stapler:widget:setInvisible', on),
+  staplerWidgetReset: (): void => { ipcRenderer.send('stapler:widget:reset'); },
+  staplerWidgetHide: (): void => { ipcRenderer.send('stapler:widget:hide'); },
+  staplerWidgetFocusMain: (): void => { ipcRenderer.send('stapler:widget:focusMain'); },
+  /** Freeze the screen, drag a region, get a PNG path back (or 'cancelled'). */
+  staplerScreenshot: (): Promise<
+    { ok: true; path: string; name: string; width: number; height: number; thumb: string } | { ok: false; error: string }
+  > => ipcRenderer.invoke('stapler:screenshot'),
+  // Crop-overlay side.
+  staplerCropImage: (): Promise<{ dataUrl: string; width: number; height: number; lastRegion: StaplerRect | null } | null> =>
+    ipcRenderer.invoke('stapler:crop:image'),
+  staplerCropDone: (region: StaplerRect | null): void => { ipcRenderer.send('stapler:crop:done', region); },
 
   // ─── Integrations registry (Phase 2 — labeled REST endpoints via the secret broker) ──
   // Bridges the §6 IPC surface for the Settings UI. WRITE-ONLY secret contract end to

@@ -34,6 +34,7 @@ import { TaskDetailOverlay } from '@/components/TaskDetailOverlay';
 import { IdePanel } from '@/ide/IdePanel';
 import { useHoldOptionToTalk } from '@/freeflow/holdOption';
 import { staplerSession } from '@/stapler/session';
+import { useStaplerRelay } from '@/stapler/relay';
 import brandLogo from '@brand/logo.png?url';
 
 // Injected at build time from package.json (see electron.vite.config.ts).
@@ -146,6 +147,10 @@ export function App() {
   // for whichever agent the user is viewing; gated on the flag, terminal-safe
   // (solo-hold threshold, aborts on any other key). See freeflow/holdOption.ts.
   useHoldOptionToTalk();
+
+  // The floating Stapler: report the recorder and the roster to it, and take
+  // the messages it composes into the queue.
+  useStaplerRelay();
 
   // Stapler: Ctrl+Shift+Space starts or stops a meeting. Main registers it as
   // a GLOBAL shortcut while Stapler is enabled (you are in the call, not in
