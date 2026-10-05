@@ -383,6 +383,17 @@ export interface HarnessConfig {
    *  auto-disconnect on idle — the spend cap remains the runaway guard. The user
    *  tunes this in Settings → Realtime Michael. */
   realtimeIdleDisconnectMs?: number;
+  /** Voice turn-taking pace — how soon Michael takes his turn after you pause.
+   *  'eager' jumps in on short pauses, 'patient' waits for a clear end of
+   *  thought. Default 'balanced'. Settings → Voice. */
+  realtimePace?: 'eager' | 'balanced' | 'patient';
+  /** Whether talking over Michael cuts him off mid-sentence. Default true. Turn
+   *  it off on speakers or in a noisy room, where echo and background noise
+   *  read as "the user started talking" and chop his replies. */
+  realtimeBargeIn?: boolean;
+  /** Play a short spoken filler in Michael's voice the moment a tool call
+   *  starts, so a look-up never sounds like dead air. Default true. */
+  realtimeToolFiller?: boolean;
 
   // ─── Generic inbound webhook + status API (LEGACY, single-endpoint) ─────────
   // Superseded by `webhookTriggers`, which allows many endpoints over one server
@@ -481,6 +492,9 @@ const DEFAULTS: HarnessConfig = {
   staplerVocabulary: undefined,
   realtimeVoiceEnabled: false,
   realtimeIdleDisconnectMs: 180_000,
+  realtimePace: 'balanced',
+  realtimeBargeIn: true,
+  realtimeToolFiller: true,
   webhookEnabled: false,
   webhookSecret: undefined,
   webhookPort: undefined,

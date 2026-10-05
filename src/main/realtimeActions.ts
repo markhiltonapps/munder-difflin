@@ -145,6 +145,9 @@ const SETTING_POLICY: Record<string, {
   strongKeepalive: { tier: 'soft', type: 'boolean' },
   autoUpdate: { tier: 'soft', type: 'boolean' },
   realtimeIdleDisconnectMs: { tier: 'soft', type: 'number', min: 30_000, max: 3_600_000 },
+  realtimePace: { tier: 'soft', type: 'string', values: ['eager', 'balanced', 'patient'] },
+  realtimeBargeIn: { tier: 'soft', type: 'boolean' },
+  realtimeToolFiller: { tier: 'soft', type: 'boolean' },
   // confirm: behavior-changing — echo old→new + distinct token
   autoMode: { tier: 'confirm', type: 'boolean' },
   defaultModel: { tier: 'confirm', type: 'string' },

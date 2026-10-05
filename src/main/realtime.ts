@@ -14,7 +14,10 @@
  *
  * Branch feat/realtime-michael. See board.md "🎙 REALTIME MICHAEL".
  */
-import { ipcMain } from 'electron';
+import { app, ipcMain } from 'electron';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { getSecret, hasSecret } from './integrations';
 
 /** Mirrors `providerKeyRef('openai')` in src/main/index.ts (BACKEND_KEY_ENV maps
@@ -109,6 +112,72 @@ export async function mintRealtimeToken(model: string = REALTIME_MODEL): Promise
   }
 }
 
+// ── Spoken tool fillers ──────────────────────────────────────────────────────
+// A tool call is a few seconds of silence from the model's side. The renderer
+// plays a short clip in Michael's voice the instant one starts ("one sec, let me
+// check"). The clips are plain text-to-speech, generated ONCE per machine from
+// the BYOK OpenAI key and cached on disk, so a filler costs nothing after the
+// first play and works offline afterwards.
+const TTS_URL = 'https://api.openai.com/v1/audio/speech';
+const TTS_MODEL = 'gpt-4o-mini-tts';
+/** Michael's realtime voice first; older accounts that do not list it for TTS
+ *  fall back to the nearest classic voice. */
+const TTS_VOICES = ['cedar', 'ash'];
+const TTS_TIMEOUT_MS = 20_000;
+const FILLER_MAX_CHARS = 80;
+
+function fillerDir(): string {
+  return join(app.getPath('userData'), 'realtime-fillers');
+}
+
+export type FillerResult = { ok: true; dataUrl: string } | { ok: false; error: string };
+
+/** Return a base64 MP3 data URL for `text` spoken in Michael's voice. Cached
+ *  by content hash; the key is read main-only and never leaves this process. */
+export async function fillerClip(text: unknown): Promise<FillerResult> {
+  const phrase = typeof text === 'string' ? text.trim().slice(0, FILLER_MAX_CHARS) : '';
+  if (!phrase) return { ok: false, error: 'empty filler' };
+  const dir = fillerDir();
+  const file = join(dir, `${createHash('sha1').update(`${TTS_MODEL}|${phrase}`).digest('hex')}.mp3`);
+  try {
+    if (existsSync(file)) return { ok: true, dataUrl: `data:audio/mpeg;base64,${readFileSync(file).toString('base64')}` };
+  } catch { /* regenerate below */ }
+  const key = getSecret(OPENAI_KEY_REF);
+  if (!key) return { ok: false, error: 'no OpenAI API key set' };
+  let lastError = 'text-to-speech failed';
+  for (const voice of TTS_VOICES) {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), TTS_TIMEOUT_MS);
+    try {
+      const r = await fetch(TTS_URL, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: TTS_MODEL, voice, input: phrase, response_format: 'mp3',
+          instructions: 'Quick, warm and casual — a brief aside before looking something up.'
+        }),
+        signal: ac.signal
+      });
+      if (!r.ok) {
+        const body = await r.text().catch(() => '');
+        lastError = `text-to-speech failed (${r.status}): ${body.slice(0, 160)}`;
+        // An unknown voice is the one error worth retrying with the next voice.
+        if (r.status === 400 && /voice/i.test(body)) continue;
+        return { ok: false, error: lastError };
+      }
+      const bytes = Buffer.from(await r.arrayBuffer());
+      try { mkdirSync(dir, { recursive: true }); writeFileSync(file, bytes); } catch { /* cache is best-effort */ }
+      return { ok: true, dataUrl: `data:audio/mpeg;base64,${bytes.toString('base64')}` };
+    } catch (e) {
+      lastError = e instanceof Error ? (e.name === 'AbortError' ? 'text-to-speech timed out' : e.message) : String(e);
+      return { ok: false, error: lastError };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return { ok: false, error: lastError };
+}
+
 /** Register the renderer-facing realtime IPC. A SINGLE call from index.ts (rather
  *  than per-handler `ipcMain.handle` lines there) keeps the index.ts footprint to
  *  one line — rt-1 COORD note (Oscar also edits index.ts). Neither handler ever
@@ -122,4 +191,6 @@ export function registerRealtimeIpc(): void {
     const model = typeof p.model === 'string' && p.model.trim() ? p.model.trim() : REALTIME_MODEL;
     return mintRealtimeToken(model);
   });
+  // A spoken filler clip (cached text-to-speech) for the tool-latency gap.
+  ipcMain.handle('realtime:fillerClip', (_evt, text: unknown) => fillerClip(text));
 }

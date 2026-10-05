@@ -28,6 +28,8 @@ import { RealtimeAgent, RealtimeSession, OpenAIRealtimeWebRTC } from '@openai/ag
 import { realtimeReadTools, realtimeSessionSummary } from './tools';
 import { realtimeActionTools } from './actions';
 import { resetRealtimeCost, recordRealtimeUsage, endRealtimeCost, isRealtimeIdle, getRealtimeCostSnapshot } from './costStore';
+import { DeliveryGate, turnDetectionFor } from './turnTaking';
+import { prefetchFillers, withSpokenFiller } from './filler';
 
 /**
  * Voice-loop state machine:
@@ -131,6 +133,13 @@ let connecting = false;
 /** rt-12: unsubscribe handle for the completion push, active only while a session is live. */
 let offCompletion: (() => void) | null = null;
 let offFloorDelta: (() => void) | null = null;
+/** Holds floor updates + completions while anyone is talking; delivers them in
+ *  one batch once the line has been quiet (see turnTaking.ts). */
+let gate: DeliveryGate | null = null;
+let offConfigChanged: (() => void) | null = null;
+/** True once the model has produced audio in the current response — it said its
+ *  own "let me check", so the filler clip stays quiet for this tool call. */
+let spokeThisResponse = false;
 /** rt-9 cost guard: periodic tick that auto-disconnects on hard cost cap or after an
  *  idle open mic (curbs runaway audio spend on a forgotten session). */
 let costGuardTimer: ReturnType<typeof setInterval> | null = null;
@@ -168,6 +177,7 @@ function setState(patch: Partial<RealtimeMichaelState>): void {
 function wire(s: RealtimeSession): void {
   // Model started / stopped speaking audio back to the user.
   s.on('audio_start', () => {
+    spokeThisResponse = true;
     if (state.status !== 'working') setState({ status: 'responding' });
   });
   s.on('audio_stopped', () => {
@@ -177,6 +187,7 @@ function wire(s: RealtimeSession): void {
   // User talked over the model (barge-in) — semantic_vad with interruptResponse
   // truncates the assistant turn automatically; we just reflect it.
   s.on('audio_interrupted', () => {
+    gate?.setAudioPlaying(false);
     if (state.status !== 'working') setState({ status: 'listening' });
   });
   // A turn fully ended — safety reset to listening (no-op if already there).
@@ -188,6 +199,7 @@ function wire(s: RealtimeSession): void {
   // a side effect, then resume. (Phase 1 runs the rt-4 read-tools; rt-5 action-tools
   // inherit this for free.)
   s.on('agent_tool_start', () => {
+    gate?.setToolRunning(true);
     try {
       s.mute(true);
     } catch {
@@ -196,6 +208,7 @@ function wire(s: RealtimeSession): void {
     setState({ status: 'working', muted: true });
   });
   s.on('agent_tool_end', () => {
+    gate?.setToolRunning(false);
     try {
       s.mute(false);
     } catch {
@@ -218,6 +231,9 @@ function wire(s: RealtimeSession): void {
   s.on('transport_event', (event) => {
     try {
       const ev = event as { type?: string; response?: { usage?: unknown } };
+      // Turn boundaries for the delivery gate + the filler's "already spoke" flag.
+      if (ev.type === 'response.created') spokeThisResponse = false;
+      gate?.onTransportEvent(ev.type);
       if (ev.type === 'response.done' && ev.response?.usage) {
         recordRealtimeUsage(ev.response.usage as Parameters<typeof recordRealtimeUsage>[0], Date.now());
       }
@@ -348,10 +364,19 @@ export async function connect(): Promise<void> {
     // persona+tools prefix stays fully prompt-cached across turns and sessions
     // (cached input is ~99% cheaper). The snapshot goes in as the FIRST
     // conversation item below, and the floor watcher appends deltas mid-call.
+    // Turn-taking is the user's call (Settings → Voice): how eagerly Michael
+    // takes his turn, whether the mic may cut him off, and whether a tool call
+    // gets a spoken filler. Re-applied live on config:changed (below).
+    const voiceCfg = await window.cth.getConfig();
+    const fillerOn = voiceCfg.realtimeToolFiller !== false;
+    const tools = withSpokenFiller([...realtimeReadTools(), ...realtimeActionTools()], {
+      shouldPlay: () => fillerOn && !spokeThisResponse,
+      sinkId: () => state.outputDeviceId
+    });
     const agent = new RealtimeAgent({
       name: 'Michael',
       instructions: MICHAEL_PERSONA,
-      tools: [...realtimeReadTools(), ...realtimeActionTools()]
+      tools
     });
     const s = new RealtimeSession(agent, {
       transport,
@@ -361,13 +386,8 @@ export async function connect(): Promise<void> {
         voice: REALTIME_VOICE,
         audio: {
           input: {
-            // Natural turn boundaries + automatic barge-in (truncate on interrupt).
-            turnDetection: {
-              type: 'semantic_vad',
-              eagerness: 'medium',
-              createResponse: true,
-              interruptResponse: true
-            }
+            // Natural turn boundaries; barge-in (truncate on interrupt) per settings.
+            turnDetection: turnDetectionFor(voiceCfg.realtimePace, voiceCfg.realtimeBargeIn)
           },
           output: { voice: REALTIME_VOICE }
         }
@@ -381,6 +401,18 @@ export async function connect(): Promise<void> {
 
     session = s;
     resetRealtimeCost(Date.now()); // rt-9: start the live session cost meter
+    spokeThisResponse = false;
+    // Fillers are cached text-to-speech; warm them now, off the critical path.
+    if (fillerOn) void prefetchFillers();
+    // Pace / barge-in changes saved in Settings apply to the live call at once.
+    offConfigChanged = window.cth.onConfigChanged?.((c) => {
+      if (session !== s) return;
+      try {
+        s.transport.updateSessionConfig({
+          audio: { input: { turnDetection: turnDetectionFor(c.realtimePace, c.realtimeBargeIn) } }
+        });
+      } catch { /* best-effort — the next connect picks it up */ }
+    }) ?? null;
     // v0.3.4: SILENT context injection — a raw conversation.item.create with no
     // response.create, so the model absorbs the item without speaking. (This SDK
     // version's sendMessage always triggers a response, so we go one level down
@@ -402,26 +434,27 @@ export async function connect(): Promise<void> {
     if (warmStart) {
       injectSilent(`(Floor snapshot at connect — orientation only, call your tools for detail: ${sanitizeForVoice(warmStart)})`);
     }
-    // Floor deltas — silent appends that keep Michael's picture live without
-    // touching the cached instructions prefix.
+    // Background context goes through the delivery gate: floor deltas (silent
+    // appends that keep Michael's picture live without touching the cached
+    // instructions prefix) and completions (spoken) are held while anyone is
+    // talking and land in one batch once the line is quiet — never mid-sentence.
+    gate = new DeliveryGate({
+      injectSilent,
+      // A system-framed notification so the model relays it rather than treating
+      // it as a user request. sendMessage triggers the reply.
+      speak: (text) => { try { session?.sendMessage(text); } catch { /* tearing down */ } }
+    });
     offFloorDelta = window.cth.onRealtimeFloorDelta?.((d) => {
       if (session !== s) return;
-      injectSilent(`(Floor update: ${sanitizeForVoice(d.text)}. Mention it only when relevant — don't interrupt.)`);
+      gate?.floorDelta(sanitizeForVoice(d.text));
     }) ?? null;
     // rt-12: mark the session live (main now pushes completions instead of queuing) and
     // subscribe so a detected completion makes Michael speak it unprompted.
     void window.cth.realtimeSetSessionLive(true);
     offCompletion = window.cth.onRealtimeCompletion((c) => {
-      try {
-        // Feed it as a system-framed notification so the model relays it rather than
-        // treating it as a user request; semantic_vad won't interrupt an active turn.
-        // N3-seam: sanitize the summary before injection (defense in depth).
-        session?.sendMessage(
-          `(System notification — a task you dispatched just finished: ${sanitizeForVoice(c.summary)}) Briefly let the user know, and offer details if they want them.`
-        );
-      } catch {
-        /* session may be tearing down */
-      }
+      if (session !== s) return;
+      // N3-seam: sanitize the summary before injection (defense in depth).
+      gate?.completion(sanitizeForVoice(c.summary));
     });
     // rt-9 cost guard: periodically stop the session if the hard cap is hit, or after an
     // idle open mic, so a forgotten session doesn't bleed audio cost. The idle window is
@@ -491,6 +524,10 @@ export function disconnect(reason: string = 'user'): void {
   offCompletion = null;
   offFloorDelta?.();
   offFloorDelta = null;
+  offConfigChanged?.();
+  offConfigChanged = null;
+  gate?.dispose();
+  gate = null;
   void window.cth.realtimeSetSessionLive(false);
   // Close the main-process mic gate so the realtime flag doesn't keep the mic permission
   // open after we've stopped (fire-and-forget — tracks are already stopped above).

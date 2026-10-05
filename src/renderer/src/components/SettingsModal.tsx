@@ -551,6 +551,10 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   const [idleDisconnectMs, setIdleDisconnectMs] = useState<number>(
     (config as HarnessConfig).realtimeIdleDisconnectMs ?? 180_000
   );
+  // Turn-taking: pace (semantic-VAD eagerness), barge-in, spoken tool filler.
+  const [voicePace, setVoicePace] = useState<string>((config as HarnessConfig).realtimePace ?? 'balanced');
+  const [voiceBargeIn, setVoiceBargeIn] = useState<boolean>((config as HarnessConfig).realtimeBargeIn !== false);
+  const [voiceToolFiller, setVoiceToolFiller] = useState<boolean>((config as HarnessConfig).realtimeToolFiller !== false);
 
   // Re-seed every editable field from the on-disk config when the modal opens.
   // App's `config` prop is loaded once and never refreshed after a save, so
@@ -579,6 +583,9 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
       setGroqKey(cc.groqApiKey ?? '');
       setFreeflowModel(cc.freeflowModel ?? 'whisper-large-v3-turbo');
       setIdleDisconnectMs((c as HarnessConfig).realtimeIdleDisconnectMs ?? 180_000);
+      setVoicePace((c as HarnessConfig).realtimePace ?? 'balanced');
+      setVoiceBargeIn((c as HarnessConfig).realtimeBargeIn !== false);
+      setVoiceToolFiller((c as HarnessConfig).realtimeToolFiller !== false);
     }).catch(() => { /* keep prop-seeded values */ });
     window.cth.kgStatus().then((s) => { if (alive) setKgDocCount(s.docCount); })
       .catch(() => { /* status unavailable */ });
@@ -2202,6 +2209,75 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                             {t('settings.voice.idleDisconnectDesc')}
                           </span>
                         </label>
+
+                        {/* Turn-taking — the three knobs that decide whether a voice
+                            conversation feels fluid: pace, barge-in, spoken filler. */}
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, width: 280 }}>
+                          <span style={slackLabelStyle}>{t('settings.voice.pace')}</span>
+                          <select
+                            value={voicePace}
+                            onChange={(e) => {
+                              setVoicePace(e.target.value);
+                              stage({ realtimePace: e.target.value as HarnessConfig['realtimePace'] } as Partial<HarnessConfig>);
+                            }}
+                            style={{ ...slackInputStyle, fontFamily: 'var(--cth-font-mono)' }}
+                          >
+                            <option value="eager">{t('settings.voice.paceEager')}</option>
+                            <option value="balanced">{t('settings.voice.paceBalanced')}</option>
+                            <option value="patient">{t('settings.voice.pacePatient')}</option>
+                          </select>
+                          <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                            {t('settings.voice.paceDesc', { godName })}
+                          </span>
+                        </label>
+
+                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
+                              {t('settings.voice.bargeIn', { godName })}
+                            </span>
+                            <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                              {t('settings.voice.bargeInDesc')}
+                            </span>
+                          </div>
+                          <PixelButton
+                            variant={voiceBargeIn ? 'primary' : 'secondary'}
+                            size="sm"
+                            onClick={() => {
+                              const next = !voiceBargeIn;
+                              setVoiceBargeIn(next);
+                              stage({ realtimeBargeIn: next } as Partial<HarnessConfig>);
+                            }}
+                          >
+                            {voiceBargeIn ? t('common.on') : t('common.off')}
+                          </PixelButton>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
+                              {t('settings.voice.toolFiller')}
+                            </span>
+                            <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                              {t('settings.voice.toolFillerDesc', { godName })}
+                            </span>
+                          </div>
+                          <PixelButton
+                            variant={voiceToolFiller ? 'primary' : 'secondary'}
+                            size="sm"
+                            onClick={() => {
+                              const next = !voiceToolFiller;
+                              setVoiceToolFiller(next);
+                              stage({ realtimeToolFiller: next } as Partial<HarnessConfig>);
+                            }}
+                          >
+                            {voiceToolFiller ? t('common.on') : t('common.off')}
+                          </PixelButton>
+                        </div>
+
+                        <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                          {t('settings.voice.batchedNote')}
+                        </span>
                       </div>
                     </>
                   )}

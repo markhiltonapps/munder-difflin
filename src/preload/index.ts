@@ -319,6 +319,12 @@ export interface HarnessConfig {
   /** Realtime voice idle auto-disconnect (ms); default 180000 (3 min), 0 = never.
    *  Tuned in Settings → Realtime Michael; the cost cap stays the runaway guard. */
   realtimeIdleDisconnectMs?: number;
+  /** Voice turn-taking: how soon Michael answers after a pause. Default 'balanced'. */
+  realtimePace?: 'eager' | 'balanced' | 'patient';
+  /** Whether talking over Michael cuts him off. Default true; off for speakers / noisy rooms. */
+  realtimeBargeIn?: boolean;
+  /** Play a short spoken filler in Michael's voice when a tool call starts. Default true. */
+  realtimeToolFiller?: boolean;
   costCapUsd?: number;
   costCapTokens?: number;
   agentTokenCaps?: Record<string, number>;
@@ -1416,6 +1422,11 @@ const api = {
     | { ok: true; token: string; expiresAt: number | null; sessionConfig: { model: string } }
     | { ok: false; error: string; code?: string }
   > => ipcRenderer.invoke('realtime:mintToken', req ?? {}),
+  /** A short clip of Michael's voice saying `text` (cached text-to-speech), as a
+   *  data URL — played the instant a tool call starts so a look-up is never
+   *  dead air. */
+  realtimeFillerClip: (text: string): Promise<{ ok: true; dataUrl: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('realtime:fillerClip', text),
   // rt-5 voice ACTIONS — the renderer holds NO policy; main (realtimeActions.ts) owns
   // the tiering, two-step verbal confirm, hard allowlist, and michael-voice
   // attribution. These just forward {verb,...args} and speak back `spoken`.

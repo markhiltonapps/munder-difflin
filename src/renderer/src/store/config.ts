@@ -115,6 +115,10 @@ export interface HarnessConfig {
   /** Realtime voice idle auto-disconnect (ms); default 180000 (3 min), 0 = never.
    *  Tuned in Settings → Realtime Michael; the cost cap stays the runaway guard. */
   realtimeIdleDisconnectMs?: number;
+  /** Voice turn-taking (mirrors src/main/config.ts). */
+  realtimePace?: 'eager' | 'balanced' | 'patient';
+  realtimeBargeIn?: boolean;
+  realtimeToolFiller?: boolean;
   costCapUsd?: number;
   /** Hard total-token ceiling across active agents (the user-facing budget). */
   costCapTokens?: number;

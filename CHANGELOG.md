@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **A smoother voice conversation with Michael.** Settings → Voice gains three turn-taking
+  controls. **Conversation pace** (Eager / Balanced / Patient) sets how soon he answers after you
+  pause. **Let me interrupt Michael** decides whether talking over him cuts him off; turn it off on
+  speakers or in a noisy room, where echo and background noise used to chop his replies into the
+  familiar stall-and-stop. **Spoken filler while checking** has him say a short "one sec, let me
+  check" in his own voice the moment a look-up starts instead of going quiet; the clips are
+  generated once with your OpenAI key and cached. Pace and interruption changes apply to a call
+  already in progress. Floor updates and finished-task notices no longer land mid-sentence: they
+  wait until nobody has spoken for a moment and arrive together.
 - **Slack Socket Mode.** Settings → Connections → Slack gains a transport choice. **Socket Mode**
   opens a connection from your computer out to Slack with an app-level token, so there is no
   Request URL to paste and nothing breaks when the app restarts: the link reconnects by itself
