@@ -32,6 +32,13 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Payroll meters OpenCode and Gemini CLI agents.** Neither engine reports usage to the app, but
+  both keep exact per-message token counts on disk. OpenCode agents now get their own session
+  database inside their hive folder, and the app reads completed replies from it; Gemini CLI
+  agents are read from the chat logs Gemini keeps for their project folder, matched to the agent
+  that was running when the session started. Each reply is counted once, survives restarts, and is
+  priced at the real model rate, so a DeepSeek worker on OpenCode and a Flash worker on Gemini
+  finally show true tokens and cost beside the Claude agents.
 - **Showcase projects, views and a Done shelf.** Deliverables now live as
   `showcase/<agent>/<project>/`, and agents are told to file their work under a short project
   name. The shelf groups by employee, project, date or type (remembered), has a search box, and

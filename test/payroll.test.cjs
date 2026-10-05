@@ -162,7 +162,8 @@ test('the roster engine wins the label, and an engine that reports no usage read
   assert.equal(providerReportsUsage('claude'), true);
   assert.equal(providerReportsUsage('qwen'), true, 'proxy bridge meters it');
   assert.equal(providerReportsUsage('crush'), true);
-  for (const p of ['gemini', 'opencode', 'pi', 'codex']) assert.equal(providerReportsUsage(p), false, p);
+  for (const p of ['opencode', 'gemini']) assert.equal(providerReportsUsage(p), true, `${p} is read by the engine meter`);
+  for (const p of ['pi', 'codex']) assert.equal(providerReportsUsage(p), false, p);
   assert.equal(providerReportsUsage(undefined), true, 'legacy records are Claude');
   const store = read('src/renderer/src/payroll/store.ts');
   assert.match(store, /const label = shortModelLabel\(configured\.model \|\| a\?\.model \|\| null\);/);

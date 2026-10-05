@@ -16,6 +16,8 @@ import { RealtimeFloorWatcher } from './realtimeFloorWatcher';
 import { openTerminalAt } from './openTerminal';
 import { ShowcaseStore, serveShowcase } from './showcase';
 import { PayrollService } from './payroll';
+import { EngineMeter, type MeterAgent } from './engineMeter';
+import Database from 'better-sqlite3';
 import { setPriceOverrides } from './pricing';
 import { SHOWCASE_SCHEME, showcaseKind } from '../shared/showcase';
 import {
@@ -2885,6 +2887,7 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
         }
       );
       opts.args = [...(opts.args ?? []), ...inj.args];
+      spawnTimes.set(opts.hive.id, Date.now());
       seedPrompt = inj.seedPrompt;
       // A degraded spawn (proxy bridge never bound) is told to the user the same
       // way breaker escalations are: a native toast, gated on the notifications
@@ -3097,6 +3100,13 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
         };
       }
       extra.OPENCODE_CONFIG_CONTENT = JSON.stringify(oc);
+    }
+    // OpenCode keeps its sessions in a SQLite file; one per agent, inside the
+    // agent's hive folder, so the engine meter can read that agent's usage
+    // without guessing which session was whose.
+    if (provider === 'opencode' && opts.hive?.id && hive.root()) {
+      const dbPath = engineMeter.opencodeDbPath(opts.hive.id);
+      if (dbPath) extra.OPENCODE_DB = dbPath;
     }
     opts.env = { ...(opts.env ?? {}), ...extra };
   }
@@ -4661,6 +4671,21 @@ function showcase(): ShowcaseStore {
 }
 ipcMain.handle('showcase:list', () => ({ root: showcase().root, items: showcase().list() }));
 
+// ─── Engine meter: usage for OpenCode + Gemini CLI from their own files ───────
+const spawnTimes = new Map<string, number>();
+const engineMeter = new EngineMeter({
+  hiveRoot: () => hive.root(),
+  agents: (): MeterAgent[] => {
+    if (!hive.enabled()) return [];
+    return Object.values(hive.registry().agents).map((a) => ({
+      id: a.id, provider: String(a.provider ?? 'claude'), cwd: a.cwd, archived: !!a.archived,
+      spawnedAt: spawnTimes.get(a.id) ?? (Date.parse((a as { createdAt?: string }).createdAt ?? '') || 0)
+    }));
+  },
+  append: (s) => hive.appendCostLedger(s),
+  openDb: (p) => { try { return new Database(p, { readonly: true, fileMustExist: true }); } catch { return null; } }
+});
+
 // ─── IPC: Payroll (per-agent tokens + cost by window) ─────────────────────────
 const payrollService = new PayrollService(() => { const r = hive.root(); return r ? join(r, 'cost-ledger.jsonl') : null; });
 setPriceOverrides(readConfig().modelPriceOverrides);
@@ -5630,6 +5655,7 @@ function armAlwaysOnBeats(): void {
   if (fleetTimer) clearInterval(fleetTimer);
   writeFleetSnapshot();
   fleetTimer = setInterval(writeFleetSnapshot, 8_000);
+  setInterval(() => engineMeter.tick(), 15_000);
   if (breakerBeatTimer) clearInterval(breakerBeatTimer);
   breakerBeatTimer = setInterval(() => { try { runBreakerBeat(300_000); } catch (e) { console.error('[breaker beat]', e); } }, 30_000);
   if (workerWakeTimer) clearInterval(workerWakeTimer);

@@ -747,6 +747,8 @@ export function installInfoForProvider(
 export function providerReportsUsage(provider: AgentProvider | undefined): boolean {
   if (!provider) return true; // legacy record: assume Claude
   if (isClaudeProvider(provider)) return true;
+  // Read from the engine's own files by the engine meter (src/main/engineMeter.ts).
+  if (provider === 'opencode' || provider === 'gemini') return true;
   const preset = providerPreset(provider);
   return preset.bridge?.kind === 'proxy';
 }
