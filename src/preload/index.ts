@@ -1336,6 +1336,14 @@ const api = {
   staplerCapabilities: (): Promise<{ loopback: boolean }> => ipcRenderer.invoke('stapler:capabilities'),
   /** Ctrl+Shift+Space pressed anywhere (global shortcut, registered by main
    *  while Stapler is enabled): start or stop the meeting. */
+  /** What main's display-media handler decided for the last system-audio
+   *  request (ok-loopback, ok-video-only, frame-fallback, flag-off, no-source,
+   *  capturer-error), so a refusal can say why. */
+  onStaplerThemDiag: (cb: (d: { reason: string; detail?: string }) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, d: { reason: string; detail?: string }): void => cb(d);
+    ipcRenderer.on('stapler:themDiag', listener);
+    return () => ipcRenderer.removeListener('stapler:themDiag', listener);
+  },
   onStaplerToggle: (cb: () => void): (() => void) => {
     const listener = (): void => cb();
     ipcRenderer.on('stapler:toggle', listener);

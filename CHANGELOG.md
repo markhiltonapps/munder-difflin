@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
+- **Stapler says exactly why system audio was refused, and shows live levels.** The You and
+  Them indicators now carry a small level meter while recording, so you can see each side hearing
+  sound. When system audio cannot be captured, the Them line names the actual cause from the
+  app's capture handler (flag off, no screen found, capturer error) with what to do about it,
+  instead of a generic "refused". The handler also no longer refuses when the Stapler flag has
+  simply never been saved, and when no screen source is found on Windows it still captures the
+  system audio using the page's own frame.
 - **Payroll shows the engine you set, not the last one that reported.** An agent moved to an
   engine that does not report usage (Gemini CLI, OpenCode, pi, Codex, Copilot, Cursor) kept showing
   its old Claude model and figures. The line now names the engine from the roster and reads "not

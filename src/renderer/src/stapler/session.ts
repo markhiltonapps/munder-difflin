@@ -46,6 +46,10 @@ export interface StaplerState {
   themAvailable: boolean | null;
   /** When it was not: why, so the owner knows what to change. */
   themFailure: ThemFailure | null;
+  /** What main's capture handler decided last (see preload onStaplerThemDiag). */
+  themDiag: { reason: string; detail?: string } | null;
+  /** Live input levels, 0..1, for the meters beside You and Them. */
+  levels: { you: number; them: number };
   /** Last error. Capture errors stop the meeting; a transcription error does
    *  not (the next chunk may well succeed), it is just shown. */
   error: string | null;
@@ -54,7 +58,7 @@ export interface StaplerState {
 }
 
 let state: StaplerState = {
-  status: 'idle', meeting: null, pending: 0, elapsed: 0, themAvailable: null, themFailure: null, error: null, markdownPath: null
+  status: 'idle', meeting: null, pending: 0, elapsed: 0, themAvailable: null, themFailure: null, themDiag: null, levels: { you: 0, them: 0 }, error: null, markdownPath: null
 };
 const listeners = new Set<() => void>();
 function setState(patch: Partial<StaplerState>): void {
@@ -99,6 +103,8 @@ class ChunkRecorder {
   private levelTimer: ReturnType<typeof setInterval> | null = null;
   /** Without a working meter every chunk counts as loud, so nothing is skipped. */
   private metered = false;
+  /** Latest instantaneous level, 0..1, for the live meter in the UI. */
+  level = 0;
   private stopped = false;
   private readonly mimeType = pickMimeType();
 
@@ -128,6 +134,7 @@ class ChunkRecorder {
           if (v > max) max = v;
         }
         if (max > this.current.peak) this.current.peak = max;
+        this.level = max;
       }, 150);
     } catch {
       this.metered = false;
@@ -177,6 +184,8 @@ class ChunkRecorder {
 // ─── The session ─────────────────────────────────────────────────────────────
 let you: ChunkRecorder | null = null;
 let them: ChunkRecorder | null = null;
+let levelTimer: ReturnType<typeof setInterval> | null = null;
+let offDiag: (() => void) | null = null;
 let tick: ReturnType<typeof setInterval> | null = null;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let segSeq = 0;
@@ -289,7 +298,10 @@ async function openLoopback(): Promise<{ stream: MediaStream | null; failure: Th
 
 async function start(): Promise<void> {
   if (state.status !== 'idle') return;
-  setState({ status: 'starting', error: null, elapsed: 0, pending: 0, themFailure: null });
+  setState({ status: 'starting', error: null, elapsed: 0, pending: 0, themFailure: null, themDiag: null, levels: { you: 0, them: 0 } });
+  // Main reports what its capture handler decided; a refusal then says why.
+  offDiag?.();
+  offDiag = window.cth.onStaplerThemDiag?.((d) => setState({ themDiag: d })) ?? null;
   // System audio FIRST: getDisplayMedia needs the click that started us to be
   // recent, and the microphone has no such clock.
   const loopback = await openLoopback();
@@ -332,6 +344,10 @@ async function start(): Promise<void> {
     return;
   }
   setState({ status: 'recording', meeting, themAvailable: !!loop, themFailure: loopback.failure, markdownPath: null });
+  if (levelTimer) clearInterval(levelTimer);
+  levelTimer = setInterval(() => {
+    setState({ levels: { you: you?.level ?? 0, them: them?.level ?? 0 } });
+  }, 150);
   tick = setInterval(() => setState({ elapsed: Math.floor((Date.now() - startMs) / 1000) }), 1000);
   scheduleSave();
 }
@@ -342,6 +358,9 @@ function stop(): void {
   if (tick) { clearInterval(tick); tick = null; }
   you?.stop(); them?.stop();
   you = null; them = null;
+  if (levelTimer) { clearInterval(levelTimer); levelTimer = null; }
+  offDiag?.(); offDiag = null;
+  setState({ levels: { you: 0, them: 0 } });
   const m = state.meeting;
   if (m) {
     setState({ meeting: { ...m, endedAt: new Date().toISOString(), title: m.title || defaultTitle(m.startedAt) } });

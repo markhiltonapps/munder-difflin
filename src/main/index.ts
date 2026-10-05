@@ -2431,14 +2431,31 @@ function createWindow(opts: { floor?: boolean } = {}): BrowserWindow {
   // on Windows only, so elsewhere the request gets video alone and the renderer
   // notices there is no audio track and records the microphone side only. A
   // request while Stapler is off is refused outright: the gate is one flag.
-  ses.setDisplayMediaRequestHandler((_request, callback) => {
-    if (readConfig().staplerEnabled !== true) { callback({}); return; }
-    desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
+  ses.setDisplayMediaRequestHandler((request, callback) => {
+    // Every decision is reported to the renderer, so a refusal names its cause
+    // on the Them indicator instead of a generic "refused".
+    const diag = (reason: string, detail?: string): void => {
+      try { liveWebContents()?.send('stapler:themDiag', { reason, detail }); } catch { /* window gone */ }
+    };
+    // Absent = on (the Settings toggle reads it the same way).
+    if (readConfig().staplerEnabled === false) { diag('flag-off'); callback({}); return; }
+    const loopback = process.platform === 'win32';
+    desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } }).then((sources) => {
       const source = sources[0];
-      if (!source) { callback({}); return; }
-      if (process.platform === 'win32') callback({ video: source, audio: 'loopback' });
-      else callback({ video: source });
-    }).catch(() => callback({}));
+      if (source) {
+        diag(loopback ? 'ok-loopback' : 'ok-video-only');
+        callback(loopback ? { video: source, audio: 'loopback' } : { video: source });
+        return;
+      }
+      // No screen source: the loopback does not depend on the picture, so
+      // hand the page its own frame as the (discarded) video and keep the audio.
+      if (loopback && request.frame) { diag('frame-fallback'); callback({ video: request.frame, audio: 'loopback' }); return; }
+      diag('no-source'); callback({});
+    }).catch((e: unknown) => {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (loopback && request.frame) { diag('frame-fallback', msg); callback({ video: request.frame, audio: 'loopback' }); return; }
+      diag('capturer-error', msg); callback({});
+    });
   });
   ses.setPermissionRequestHandler((_wc, permission, callback, details) => {
     if (permission === 'media') {

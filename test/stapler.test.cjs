@@ -251,3 +251,28 @@ test('the microphone is a choice beside Record and the capture note names the ou
     for (const k of ['systemDefaultMic', 'micPickTip', 'capturing', 'capturingTip', 'defaultOutput', 'soundSettings']) assert.ok(l.stapler[k], `${code}.stapler.${k}`);
   }
 });
+
+// --- capture diagnostics + level meters ------------------------------------------------
+
+test('the capture handler reports its decision, treats an absent flag as on, and falls back to the page frame for loopback', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const read = (rel) => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
+  const main = read('src/main/index.ts');
+  const h = main.slice(main.indexOf('ses.setDisplayMediaRequestHandler('), main.indexOf('ses.setPermissionRequestHandler('));
+  assert.match(h, /readConfig\(\)\.staplerEnabled === false/, 'only an explicit false refuses; undefined is on, like the Settings toggle');
+  for (const r of ['flag-off', 'ok-loopback', 'ok-video-only', 'frame-fallback', 'no-source', 'capturer-error']) assert.ok(h.includes(`'${r}'`), r);
+  assert.match(h, /callback\(\{ video: request\.frame, audio: 'loopback' \}\)/);
+  assert.match(h, /send\('stapler:themDiag'/);
+  const session = read('src/renderer/src/stapler/session.ts');
+  assert.match(session, /onStaplerThemDiag\?\.\(\(d\) => setState\(\{ themDiag: d \}\)\)/);
+  assert.match(session, /levels: \{ you: you\?\.level \?\? 0, them: them\?\.level \?\? 0 \}/);
+  const tab = read('src/renderer/src/components/StaplerTab.tsx');
+  assert.match(tab, /function Meter\(\{ level \}/);
+  assert.match(tab, /level=\{recording \? st\.levels\.you : undefined\}/);
+  assert.match(tab, /level=\{recording && st\.themAvailable \? st\.levels\.them : undefined\}/);
+  for (const code of ['en', 'zh-CN', 'ar']) {
+    const l = JSON.parse(read(`src/renderer/src/i18n/locales/${code}.json`));
+    assert.deepEqual(Object.keys(l.stapler.themDiag).sort(), ['capturer-error', 'flag-off', 'frame-fallback', 'no-source', 'ok-loopback', 'ok-video-only'], code);
+  }
+});
