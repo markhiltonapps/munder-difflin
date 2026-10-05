@@ -737,3 +737,16 @@ export function installInfoForProvider(
     docsUrl: p.docsUrl
   };
 }
+
+/** Does this engine's usage reach the cost ledger? Claude engines report
+ *  through Claude's own telemetry; proxy-bridge engines (qwen, crush) are
+ *  metered by the sidecar that forwards their traffic. The hooks-only engines
+ *  (Gemini CLI, OpenCode, pi, Codex, Copilot, Cursor, Antigravity) expose no
+ *  token counts to the app yet, so their Payroll rows read "not metered"
+ *  rather than showing a stale figure from an earlier engine. */
+export function providerReportsUsage(provider: AgentProvider | undefined): boolean {
+  if (!provider) return true; // legacy record: assume Claude
+  if (isClaudeProvider(provider)) return true;
+  const preset = providerPreset(provider);
+  return preset.bridge?.kind === 'proxy';
+}

@@ -26,13 +26,18 @@ export function AgentStrip({ config }: AgentStripProps) {
   const costLines = useMemo(() => {
     const labels = {
       today: t('payroll.today'), week: t('payroll.week'), month: t('payroll.month'), all: t('payroll.all'),
-      apiEq: t('payroll.apiEquivalent'), unknown: t('payroll.unknownPrice')
+      apiEq: t('payroll.apiEquivalent'), unknown: t('payroll.unknownPrice'),
+      notMetered: t('payroll.notMetered'), noUsageYet: t('payroll.noUsageYet')
     };
     const out: Record<string, { line: string; title: string }> = {};
     if (!payrollState.loaded) return out;
-    for (const p of payrollState.summary?.agents ?? []) { const l = payrollLineFor(p, labels); if (l) out[p.agentId] = l; }
+    const byId = new Map((payrollState.summary?.agents ?? []).map((p) => [p.agentId, p] as const));
+    for (const a of agents) {
+      const l = payrollLineFor(byId.get(a.id) ?? null, labels, { model: a.model, provider: a.provider });
+      if (l) out[a.id] = l;
+    }
     return out;
-  }, [payrollState, t]);
+  }, [payrollState, t, agents]);
   const setAddAgentOpen = useStore(s => s.setAddAgentOpen);
   const openTaskDetail = useStore(s => s.openTaskDetail);
   const reorderAgents = useStore(s => s.reorderAgents);

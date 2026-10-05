@@ -5,6 +5,7 @@
  */
 import { useSyncExternalStore } from 'react';
 import { fmtTokens, fmtUsd, shortModelLabel, type PayrollAgent, type PayrollSummary } from '@shared/payroll';
+import { providerReportsUsage, type AgentProvider } from '@shared/agentProvider';
 
 interface State { summary: PayrollSummary | null; loaded: boolean }
 
@@ -42,20 +43,38 @@ export function agentPayroll(id: string): PayrollAgent | null {
   return state.summary?.agents.find((a) => a.agentId === id) ?? null;
 }
 
+export interface PayrollLabels {
+  today: string; week: string; month: string; all: string;
+  apiEq: string; unknown: string; notMetered: string; noUsageYet: string;
+}
+
+/** What the roster says the agent runs on. The ledger only knows the model of
+ *  the last sample that REACHED it, so after a switch to an engine that does
+ *  not report usage the ledger would keep naming the old one. */
+export interface ConfiguredEngine { model?: string | null; provider?: AgentProvider }
+
 /** The one-line summary under an agent's name, and the fuller hover text. */
-export function payrollLineFor(a: PayrollAgent | null, labels: { today: string; week: string; month: string; all: string; apiEq: string; unknown: string }): { line: string; title: string } | null {
-  if (!a) return null;
+export function payrollLineFor(a: PayrollAgent | null, labels: PayrollLabels, configured: ConfiguredEngine = {}): { line: string; title: string } | null {
+  const label = shortModelLabel(configured.model || a?.model || null);
+  const metered = providerReportsUsage(configured.provider);
+  if (!metered) {
+    return { line: `${label} · ${labels.notMetered}`, title: labels.notMetered };
+  }
+  if (!a) {
+    if (!configured.model) return null;
+    return { line: `${label} · ${labels.noUsageYet}`, title: labels.noUsageYet };
+  }
   const t = a.windows.today;
-  const line = `${shortModelLabel(a.model)} · ${fmtTokens(t.tokens)} tok · ${fmtUsd(t.usd)} ${labels.today}`;
+  const line = `${label} · ${fmtTokens(t.tokens)} tok · ${fmtUsd(t.usd)} ${labels.today}`;
   const rows = (['today', 'week', 'month', 'all'] as const).map((w) => `${labels[w]}: ${fmtTokens(a.windows[w].tokens)} tokens, ${fmtUsd(a.windows[w].usd)}`);
   const notes = [a.claude ? labels.apiEq : '', a.unknownPrice ? labels.unknown : ''].filter(Boolean);
   return { line, title: [...rows, ...notes].join('\n') };
 }
 
-export function usePayrollLine(id: string, labels: Parameters<typeof payrollLineFor>[1]): { line: string; title: string } | null {
+export function usePayrollLine(id: string, labels: PayrollLabels, configured: ConfiguredEngine = {}): { line: string; title: string } | null {
   const st = usePayroll();
   if (!st.loaded) return null;
-  return payrollLineFor(st.summary?.agents.find((a) => a.agentId === id) ?? null, labels);
+  return payrollLineFor(st.summary?.agents.find((a) => a.agentId === id) ?? null, labels, configured);
 }
 
 export const payroll = { refresh, agentPayroll };

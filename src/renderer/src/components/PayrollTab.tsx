@@ -4,7 +4,8 @@ import { PixelButton } from './PixelButton';
 import { Icon } from './Icon';
 import { useStore } from '@/store/store';
 import { payroll, usePayroll } from '@/payroll/store';
-import { PAYROLL_WINDOWS, fmtTokens, fmtUsd, payrollCsv, shortModelLabel, type PayrollAgent, type PayrollWindow } from '@shared/payroll';
+import { PAYROLL_WINDOWS, emptyWindows, fmtTokens, fmtUsd, payrollCsv, shortModelLabel, type PayrollAgent, type PayrollWindow } from '@shared/payroll';
+import { providerReportsUsage } from '@shared/agentProvider';
 
 /**
  * PAYROLL — who is on the floor, what they run on, and what they cost.
@@ -38,11 +39,21 @@ export function PayrollTab() {
   const [desc, setDesc] = useState(true);
   const [note, setNote] = useState('');
 
+  // The roster's engine wins the model column; agents whose engine reports no
+  // usage, or that have not worked yet, still get a row so the table is the
+  // whole floor.
+  const configured = useMemo(() => new Map(agents.map((a) => [a.id, a] as const)), [agents]);
+  const notMetered = (id: string): boolean => !providerReportsUsage(configured.get(id)?.provider);
+  const modelOf = (a: PayrollAgent): string | null => configured.get(a.agentId)?.model || a.model;
   const rows = useMemo(() => {
-    const list = [...(st.summary?.agents ?? [])];
+    const seen = new Set((st.summary?.agents ?? []).map((a) => a.agentId));
+    const extra: PayrollAgent[] = agents
+      .filter((a) => !seen.has(a.id))
+      .map((a) => ({ agentId: a.id, model: a.model ?? null, models: a.model ? [a.model] : [], windows: emptyWindows(), unknownPrice: false, claude: false, lastTs: 0 }));
+    const list = [...(st.summary?.agents ?? []), ...extra];
     const val = (a: PayrollAgent): string | number => {
       if (sort === 'name') return nameOf(a.agentId).toLowerCase();
-      if (sort === 'model') return a.model ?? '';
+      if (sort === 'model') return modelOf(a) ?? '';
       const [w, k] = sort.split('-') as [PayrollWindow, 'tokens' | 'usd'];
       return a.windows[w][k];
     };
@@ -91,7 +102,7 @@ export function PayrollTab() {
         </PixelButton>
       </div>
 
-      {st.loaded && (!st.summary || st.summary.empty) ? (
+      {st.loaded && rows.length === 0 ? (
         <div style={{ padding: 24, maxWidth: 560, fontSize: 13, lineHeight: '19px', color: 'var(--cth-ink-900)' }}>
           <div style={{ fontFamily: 'var(--cth-font-display)', fontSize: 10, marginBottom: 8 }}>{t('payroll.emptyTitle')}</div>
           {t('payroll.emptyBody')}
@@ -125,8 +136,9 @@ export function PayrollTab() {
                     {nameOf(a.agentId)}
                     {a.claude && <span title={t('payroll.apiEquivalent')} style={{ marginInlineStart: 6, fontSize: 10, color: 'var(--cth-ink-500)' }}>{t('payroll.apiEqTag')}</span>}
                     {a.unknownPrice && <span title={t('payroll.unknownPrice')} style={{ marginInlineStart: 6, fontSize: 10, color: '#6E1423' }}>{t('payroll.unknownTag')}</span>}
+                    {notMetered(a.agentId) && <span title={t('payroll.notMetered')} style={{ marginInlineStart: 6, fontSize: 10, color: 'var(--cth-ink-500)' }}>{t('payroll.notMeteredTag')}</span>}
                   </td>
-                  <td style={{ ...td, textAlign: 'start' }} title={a.models.join('\n')}>{shortModelLabel(a.model)}{a.models.length > 1 ? ` +${a.models.length - 1}` : ''}</td>
+                  <td style={{ ...td, textAlign: 'start' }} title={a.models.join('\n')}>{shortModelLabel(modelOf(a))}{a.models.length > 1 ? ` +${a.models.length - 1}` : ''}</td>
                   {PAYROLL_WINDOWS.map((w) => (
                     <>
                       <td key={`${w}-t`} style={{ ...td, borderInlineStart: '1px solid var(--cth-ink-300)' }} title={`${a.windows[w].input.toLocaleString()} in · ${a.windows[w].output.toLocaleString()} out · ${a.windows[w].cacheRead.toLocaleString()} cache read · ${a.windows[w].cacheWrite.toLocaleString()} cache write`}>

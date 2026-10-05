@@ -460,8 +460,9 @@ function SidebarAgentRow({
   const live = liveLineFor(agent);
   const cost = usePayrollLine(agent.id, {
     today: t('payroll.today'), week: t('payroll.week'), month: t('payroll.month'), all: t('payroll.all'),
-    apiEq: t('payroll.apiEquivalent'), unknown: t('payroll.unknownPrice')
-  });
+    apiEq: t('payroll.apiEquivalent'), unknown: t('payroll.unknownPrice'),
+    notMetered: t('payroll.notMetered'), noUsageYet: t('payroll.noUsageYet')
+  }, { model: agent.model, provider: agent.provider });
   const dragging = drag.dragId === agent.id;
   const dropTarget = drag.overId === agent.id && !!drag.dragId && drag.dragId !== agent.id;
 

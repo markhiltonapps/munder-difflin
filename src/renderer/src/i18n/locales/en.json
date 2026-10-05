@@ -175,8 +175,11 @@
     "apiEqTag": "api-eq",
     "apiEquivalent": "Runs on Claude. The dollar figure is what this work would cost at API list price, not a bill, when your agents run on a subscription.",
     "unknownTag": "price?",
+    "notMetered": "usage not reported by this engine yet",
+    "notMeteredTag": "not metered",
+    "noUsageYet": "no usage yet",
     "unknownPrice": "Some usage was on a model with no price on file, so the dollar figure is a floor.",
-    "footnote": "Tokens count input, output and cache. Claude agents on a subscription are shown at API-equivalent rates, the right number for comparing engines. Other engines are priced from a built-in table you can override in Settings → Autonomy & Budgets.",
+    "footnote": "Tokens count input, output and cache. Claude agents on a subscription are shown at API-equivalent rates, the right number for comparing engines. Other engines are priced from a built-in table you can override in Settings → Autonomy & Budgets. Claude, Qwen and Crush report usage today; Gemini CLI, OpenCode, pi, Codex, Copilot and Cursor do not yet, so their rows read \"not metered\".",
     "unknownList": "No price on file for: {{models}}",
     "emptyTitle": "NO USAGE RECORDED YET",
     "emptyBody": "The cost ledger fills as agents work. Give the floor a few minutes and come back."

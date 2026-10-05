@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
+- **Payroll shows the engine you set, not the last one that reported.** An agent moved to an
+  engine that does not report usage (Gemini CLI, OpenCode, pi, Codex, Copilot, Cursor) kept showing
+  its old Claude model and figures. The line now names the engine from the roster and reads "not
+  metered" for those engines; the Payroll tab lists every agent on the floor, those included.
 - **Stapler captures the other side when started from the hotkey or the floating window.** The
   browser only hands out system audio right after a click. A meeting started with Ctrl+Shift+Space
   or from the widget had no click behind it, so it quietly fell back to the microphone alone, and
