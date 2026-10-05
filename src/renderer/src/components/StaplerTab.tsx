@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { LevelBars, litFromLevel } from '@/stapler/LevelBars';
 import { listDevices, type AudioDevice } from '@/realtime/DevicePicker';
 import { useTranslation } from 'react-i18next';
 import { PixelButton } from './PixelButton';
@@ -456,25 +457,12 @@ export function StaplerTab() {
 
 /** One side's indicator in the control bar: a dot that is lit while that side
  *  is being captured, the side's name, and a word on where it comes from. */
-/** Five-bar level meter: lights from the left as the signal rises, so you can
- *  see at a glance that a side is actually hearing something. */
-function Meter({ level }: { level: number }) {
-  const lit = Math.min(5, Math.round(Math.sqrt(Math.max(0, Math.min(1, level))) * 5));
-  return (
-    <span aria-hidden style={{ display: 'inline-flex', gap: 2, alignItems: 'flex-end', height: 12 }}>
-      {[0, 1, 2, 3, 4].map((i) => (
-        <span key={i} style={{ width: 3, height: 4 + i * 2, background: i < lit ? (i >= 4 ? 'var(--cth-coral)' : 'var(--cth-mint)') : 'var(--cth-ink-300)' }} />
-      ))}
-    </span>
-  );
-}
-
 function Side({ on, label: name, detail, level }: { on: boolean; label: string; detail: string; level?: number }) {
   return (
     <span title={detail} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: on ? 'var(--cth-ink-900)' : 'var(--cth-ink-500)' }}>
       <span style={{ width: 8, height: 8, background: on ? 'var(--cth-mint)' : 'var(--cth-ink-300)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)' }} />
       <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 8 }}>{name.toUpperCase()}</span>
-      {level !== undefined && <Meter level={level} />}
+      {level !== undefined && <LevelBars lit={litFromLevel(level)} />}
       <span style={{ fontSize: 11 }}>{detail}</span>
     </span>
   );

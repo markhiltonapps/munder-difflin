@@ -9,8 +9,8 @@ All notable changes to this project are documented here. The format is based on
 ### Fixed
 
 - **Stapler says exactly why system audio was refused, and shows live levels.** The You and
-  Them indicators now carry a small level meter while recording, so you can see each side hearing
-  sound. When system audio cannot be captured, the Them line names the actual cause from the
+  Them indicators now carry a small level meter while recording, on the Stapler tab and on the
+  floating window that sits over your call, so you can see each side hearing sound at all times. When system audio cannot be captured, the Them line names the actual cause from the
   app's capture handler (flag off, no screen found, capturer error) with what to do about it,
   instead of a generic "refused". The handler also no longer refuses when the Stapler flag has
   simply never been saved, and when no screen source is found on Windows it still captures the

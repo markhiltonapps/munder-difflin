@@ -285,6 +285,11 @@
     "close": "关闭"
   },
   "staplerWidget": {
+    "you": "你",
+    "them": "对方",
+    "youMeter": "你的麦克风——听到你时条形会跳动",
+    "themMeter": "系统音频——听到对方时条形会跳动",
+    "themOff": "本次会议未采集系统音频——原因见订书机标签页",
     "title": "订书机",
     "faceTitle": "打开订书机",
     "faceRecordingTitle": "正在录制会议 · {{time}} — 点击打开",

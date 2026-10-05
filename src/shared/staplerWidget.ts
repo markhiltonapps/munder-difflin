@@ -25,11 +25,18 @@ export interface StaplerReport {
   elapsed: number;
   pending: number;
   themAvailable: boolean | null;
+  /** Lit bars (0..5) for the You and Them level meters while recording. */
+  levels: { you: number; them: number };
   /** Live agents only — the ones a message can be queued to. */
   agents: Array<{ id: string; name: string; isGod?: boolean }>;
 }
 
-export const EMPTY_REPORT: StaplerReport = { status: 'idle', elapsed: 0, pending: 0, themAvailable: null, agents: [] };
+/** Raw 0..1 level → lit bars (0..5), square-root curve so quiet speech shows. */
+export function litFromLevel(level: number): number {
+  return Math.min(5, Math.round(Math.sqrt(Math.max(0, Math.min(1, level))) * 5));
+}
+
+export const EMPTY_REPORT: StaplerReport = { status: 'idle', elapsed: 0, pending: 0, themAvailable: null, levels: { you: 0, them: 0 }, agents: [] };
 
 /** Two corners of a drag → a normalised rectangle. */
 export function normalizeDrag(a: Point, b: Point): Rect {

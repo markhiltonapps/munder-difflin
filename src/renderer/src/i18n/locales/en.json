@@ -285,6 +285,11 @@
     "close": "close"
   },
   "staplerWidget": {
+    "you": "YOU",
+    "them": "THEM",
+    "youMeter": "your microphone — the bars move when it hears you",
+    "themMeter": "system audio — the bars move when the other side is heard",
+    "themOff": "system audio is not being captured this meeting — see the Stapler tab for why",
     "title": "STAPLER",
     "faceTitle": "Open the Stapler",
     "faceRecordingTitle": "Recording the meeting · {{time}} — click to open",

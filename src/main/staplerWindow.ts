@@ -400,6 +400,10 @@ export function registerStaplerWindowIpc(ipc: IpcMain, sw: StaplerWindows): void
     sw.reportState({
       status: r.status, elapsed: Number(r.elapsed) || 0, pending: Number(r.pending) || 0,
       themAvailable: typeof r.themAvailable === 'boolean' ? r.themAvailable : null,
+      levels: {
+        you: Math.max(0, Math.min(5, Math.round(Number(r.levels?.you) || 0))),
+        them: Math.max(0, Math.min(5, Math.round(Number(r.levels?.them) || 0)))
+      },
       agents: Array.isArray(r.agents)
         ? r.agents.filter((a) => a && typeof a.id === 'string' && typeof a.name === 'string')
             .map((a) => ({ id: a.id, name: a.name, isGod: a.isGod === true }))

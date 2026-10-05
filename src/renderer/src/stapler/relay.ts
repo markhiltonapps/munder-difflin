@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { litFromLevel } from './LevelBars';
 import { useStore } from '@/store/store';
 import { staplerSession } from './session';
 import type { StaplerReport } from '@shared/staplerWidget';
@@ -19,7 +20,9 @@ export function useStaplerRelay(): void {
       const agents = useStore.getState().agents
         .filter((a) => a.ptyId)
         .map((a) => ({ id: a.id, name: a.name, isGod: a.isGod === true }));
-      return { status: st.status, elapsed: st.elapsed, pending: st.pending, themAvailable: st.themAvailable, agents };
+      // Quantized to lit bars so the meters move without a report per sample.
+      const levels = { you: litFromLevel(st.levels.you), them: st.themAvailable ? litFromLevel(st.levels.them) : 0 };
+      return { status: st.status, elapsed: st.elapsed, pending: st.pending, themAvailable: st.themAvailable, levels, agents };
     };
     // Coalesce: the pty parser replaces `agents` on every chunk of output, and
     // the recorder ticks once a second; one report per animation frame is

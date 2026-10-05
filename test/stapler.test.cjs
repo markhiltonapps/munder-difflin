@@ -269,11 +269,23 @@ test('the capture handler reports its decision, treats an absent flag as on, and
   assert.match(session, /onStaplerThemDiag\?\.\(\(d\) => setState\(\{ themDiag: d \}\)\)/);
   assert.match(session, /levels: \{ you: you\?\.level \?\? 0, them: them\?\.level \?\? 0 \}/);
   const tab = read('src/renderer/src/components/StaplerTab.tsx');
-  assert.match(tab, /function Meter\(\{ level \}/);
+  assert.match(tab, /<LevelBars lit=\{litFromLevel\(level\)\} \/>/);
   assert.match(tab, /level=\{recording \? st\.levels\.you : undefined\}/);
   assert.match(tab, /level=\{recording && st\.themAvailable \? st\.levels\.them : undefined\}/);
   for (const code of ['en', 'zh-CN', 'ar']) {
     const l = JSON.parse(read(`src/renderer/src/i18n/locales/${code}.json`));
     assert.deepEqual(Object.keys(l.stapler.themDiag).sort(), ['capturer-error', 'flag-off', 'frame-fallback', 'handler-silent', 'no-source', 'ok-loopback', 'ok-video-only'], code);
   }
+});
+
+test('the level meters are on the floating window too, fed by the relay report', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const read = (rel) => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
+  assert.match(read('src/shared/staplerWidget.ts'), /levels: \{ you: number; them: number \};/);
+  assert.match(read('src/renderer/src/stapler/relay.ts'), /levels = \{ you: litFromLevel\(st\.levels\.you\), them: st\.themAvailable \? litFromLevel\(st\.levels\.them\) : 0 \}/);
+  const w = read('src/renderer/src/stapler/StaplerWidget.tsx');
+  assert.equal(w.split('<LevelBars lit={report.levels.you}').length - 1, 2, 'face and header');
+  const { litFromLevel } = loadTs('src/shared/staplerWidget.ts');
+  assert.deepEqual([0, 0.04, 0.25, 1, 2].map(litFromLevel), [0, 1, 3, 5, 5]);
 });

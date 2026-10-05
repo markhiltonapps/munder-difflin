@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { LevelBars } from './LevelBars';
 import { useTranslation } from 'react-i18next';
 import { SpritePortrait } from '@/components/SpritePortrait';
 import { Icon, type IconName } from '@/components/Icon';
@@ -190,6 +191,12 @@ export function StaplerWidget() {
         }}>
           {recording ? `● ${fmtClock(report.elapsed)}` : sent ? '✓' : ''}
         </div>
+        {recording && (
+          <div style={{ marginTop: 2, display: 'flex', gap: 8, padding: '2px 6px', background: 'rgba(26,19,32,0.72)', borderRadius: 4 }}>
+            <LevelBars lit={report.levels.you} label={t('staplerWidget.you')} title={t('staplerWidget.youMeter')} />
+            <LevelBars lit={report.themAvailable ? report.levels.them : 0} label={t('staplerWidget.them')} title={report.themAvailable ? t('staplerWidget.themMeter') : t('staplerWidget.themOff')} />
+          </div>
+        )}
       </div>
     );
   }
@@ -218,7 +225,13 @@ export function StaplerWidget() {
           <SpritePortrait character="michael" scale={1.5} />
         </span>
         <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 9, flex: 1 }}>{t('staplerWidget.title')}</span>
-        {recording && <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 11, color: 'var(--cth-coral)' }}>● {fmtClock(report.elapsed)}</span>}
+        {recording && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <LevelBars lit={report.levels.you} label={t('staplerWidget.you')} title={t('staplerWidget.youMeter')} />
+            <LevelBars lit={report.themAvailable ? report.levels.them : 0} label={t('staplerWidget.them')} title={report.themAvailable ? t('staplerWidget.themMeter') : t('staplerWidget.themOff')} />
+            <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 11, color: 'var(--cth-coral)' }}>● {fmtClock(report.elapsed)}</span>
+          </span>
+        )}
         <button className="cth-titlebar-nodrag" onClick={() => window.cth.staplerWidgetHide()} title={t('staplerWidget.hide')} aria-label={t('staplerWidget.hide')} style={iconBtn}>
           <Icon name="x" />
         </button>
