@@ -2461,7 +2461,14 @@ function createWindow(opts: { floor?: boolean } = {}): BrowserWindow {
     if (permission === 'media') {
       const mediaTypes = details && 'mediaTypes' in details ? details.mediaTypes : undefined;
       const wantsAudio = !mediaTypes || mediaTypes.includes('audio');
-      callback(micFeatureLive() && wantsAudio);
+      // A getDisplayMedia request (the Stapler's system-audio side) comes
+      // through THIS gate first, before the display-media handler above ever
+      // runs, and its mediaTypes list is EMPTY: screen and loopback are not
+      // devices. Reading that as "no audio wanted" refused every system-audio
+      // request with "Permission denied" and the handler never saw it. An
+      // empty list is a display request: allow it while a mic feature is live.
+      const isDisplayCapture = Array.isArray(mediaTypes) && mediaTypes.length === 0;
+      callback(micFeatureLive() && (wantsAudio || isDisplayCapture));
       return;
     }
     callback(true);

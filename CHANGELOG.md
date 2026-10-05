@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
+- **Stapler now actually captures the other side of a call.** Every system-audio request was being
+  refused at the app's permission gate before the capture code ever ran: the gate reads a list of
+  requested device types, and a screen-plus-system-audio request has none, so it was treated as
+  "no audio wanted" and denied. The gate now recognises that shape and lets it through while the
+  Stapler is on. This is the root cause behind "microphone only" since the Stapler shipped.
 - **Stapler says exactly why system audio was refused, and shows live levels.** The You and
   Them indicators now carry a small level meter while recording, on the Stapler tab and on the
   floating window that sits over your call, so you can see each side hearing sound at all times. When system audio cannot be captured, the Them line names the actual cause from the

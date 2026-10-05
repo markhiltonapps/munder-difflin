@@ -289,3 +289,22 @@ test('the level meters are on the floating window too, fed by the relay report',
   const { litFromLevel } = loadTs('src/shared/staplerWidget.ts');
   assert.deepEqual([0, 0.04, 0.25, 1, 2].map(litFromLevel), [0, 1, 3, 5, 5]);
 });
+
+test('the permission gate lets a display-capture request (empty mediaTypes) through to the capture handler', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src/main/index.ts'), 'utf8');
+  const gate = main.slice(main.indexOf('ses.setPermissionRequestHandler('), main.indexOf('ses.setPermissionCheckHandler('));
+  assert.match(gate, /const isDisplayCapture = Array\.isArray\(mediaTypes\) && mediaTypes\.length === 0;/);
+  assert.match(gate, /callback\(micFeatureLive\(\) && \(wantsAudio \|\| isDisplayCapture\)\);/);
+  // Behaviour, re-implemented from the same expressions, for the three shapes Electron sends.
+  const decide = (mediaTypes, live) => {
+    const wantsAudio = !mediaTypes || mediaTypes.includes('audio');
+    const isDisplayCapture = Array.isArray(mediaTypes) && mediaTypes.length === 0;
+    return live && (wantsAudio || isDisplayCapture);
+  };
+  assert.equal(decide(['audio'], true), true, 'microphone');
+  assert.equal(decide([], true), true, 'getDisplayMedia: screen + loopback are not devices');
+  assert.equal(decide(['video'], true), false, 'a camera-only request is still refused');
+  assert.equal(decide([], false), false, 'nothing while no mic feature is on');
+});
