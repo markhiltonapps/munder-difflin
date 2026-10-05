@@ -184,3 +184,37 @@ test('the three locales carry the same stapler keys', () => {
     assert.deepEqual(keys('ar', pick), keys('en', pick));
   }
 });
+
+// --- system audio ("Them") capture ------------------------------------------------
+
+test('a getDisplayMedia failure is read into a reason the owner can act on', () => {
+  const { classifyThemFailure } = loadTs('src/shared/stapler.ts');
+  const err = (name, message) => Object.assign(new Error(message), { name });
+  assert.equal(classifyThemFailure(err('InvalidStateError', 'getDisplayMedia must be called from a user gesture handler')), 'gesture');
+  assert.equal(classifyThemFailure(new Error('requires transient activation')), 'gesture');
+  assert.equal(classifyThemFailure(err('NotAllowedError', 'Permission denied')), 'denied');
+  assert.equal(classifyThemFailure(err('NotSupportedError', 'x')), 'unsupported');
+  assert.equal(classifyThemFailure(new Error('boom')), 'error');
+  assert.equal(classifyThemFailure(undefined), 'error');
+});
+
+test('system audio is requested before the microphone, and hotkey/widget starts carry a user gesture', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const read = (rel) => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
+  const session = read('src/renderer/src/stapler/session.ts');
+  const loop = session.indexOf('const loopback = await openLoopback();');
+  const mic = session.indexOf('mic = await openMic();');
+  assert.ok(loop > 0 && mic > loop, 'getDisplayMedia needs the click to be fresh; the mic does not');
+  assert.match(session, /themFailure: loopback\.failure/);
+  const main = read('src/main/index.ts');
+  assert.match(main, /executeJavaScript\("typeof window\.__cthStaplerToggle === 'function'[^"]*", true\)/, 'userGesture must be true');
+  assert.match(main, /forwardStaplerToggle\(win\.webContents\)/, 'the hotkey uses the gesture path');
+  assert.match(main, /forwardToggle: \(wc\) => forwardStaplerToggle\(wc\)/, 'the widget uses the gesture path');
+  assert.match(read('src/main/staplerWindow.ts'), /ipc\.on\('stapler:widget:toggleMeeting', \(\) => sw\.toggleMeeting\(\)\)/);
+  assert.match(read('src/renderer/src/App.tsx'), /__cthStaplerToggle = \(\) => \{ lastForwarded = Date\.now\(\); toggle\(\); \}/);
+  for (const code of ['en', 'zh-CN', 'ar']) {
+    const l = JSON.parse(read(`src/renderer/src/i18n/locales/${code}.json`));
+    assert.deepEqual(Object.keys(l.stapler.themFailure).sort(), ['denied', 'error', 'gesture', 'no-audio', 'unsupported'], code);
+  }
+});

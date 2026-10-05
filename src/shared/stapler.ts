@@ -199,3 +199,19 @@ export function normalizeMeeting(raw: unknown, fallbackId: string): StaplerMeeti
     segments
   };
 }
+
+/** Why the system-audio ("Them") side could not be captured. */
+export type ThemFailure = 'gesture' | 'denied' | 'no-audio' | 'unsupported' | 'error';
+
+/** Read a getDisplayMedia failure into something the owner can act on. The
+ *  browser requires a fresh click ("transient activation") before it will hand
+ *  out system audio; a request started from a hotkey or another window has
+ *  none, which is the usual reason the other side goes missing on Windows. */
+export function classifyThemFailure(err: unknown): ThemFailure {
+  const name = (err && typeof err === 'object' && 'name' in err) ? String((err as { name: unknown }).name) : '';
+  const msg = (err instanceof Error ? err.message : String(err ?? '')).toLowerCase();
+  if (name === 'InvalidStateError' || msg.includes('gesture') || msg.includes('activation')) return 'gesture';
+  if (name === 'NotAllowedError' || name === 'SecurityError' || msg.includes('permission') || msg.includes('denied')) return 'denied';
+  if (name === 'NotSupportedError' || name === 'TypeError' || msg.includes('not supported')) return 'unsupported';
+  return 'error';
+}

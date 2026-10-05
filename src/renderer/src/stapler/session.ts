@@ -28,8 +28,7 @@ import { useSyncExternalStore } from 'react';
 import { useStore } from '@/store/store';
 import {
   agentMessageFor, defaultTitle, isPhantomTranscript, newMeetingId,
-  type StaplerMeeting, type StaplerSegment, type StaplerSpeaker
-} from '@shared/stapler';
+  type StaplerMeeting, type StaplerSegment, type StaplerSpeaker, classifyThemFailure, type ThemFailure } from '@shared/stapler';
 
 export type StaplerStatus = 'idle' | 'starting' | 'recording' | 'stopping';
 
@@ -45,6 +44,8 @@ export interface StaplerState {
   elapsed: number;
   /** Did the other side get captured this meeting? Null before the first start. */
   themAvailable: boolean | null;
+  /** When it was not: why, so the owner knows what to change. */
+  themFailure: ThemFailure | null;
   /** Last error. Capture errors stop the meeting; a transcription error does
    *  not (the next chunk may well succeed), it is just shown. */
   error: string | null;
@@ -53,7 +54,7 @@ export interface StaplerState {
 }
 
 let state: StaplerState = {
-  status: 'idle', meeting: null, pending: 0, elapsed: 0, themAvailable: null, error: null, markdownPath: null
+  status: 'idle', meeting: null, pending: 0, elapsed: 0, themAvailable: null, themFailure: null, error: null, markdownPath: null
 };
 const listeners = new Set<() => void>();
 function setState(patch: Partial<StaplerState>): void {
@@ -248,29 +249,39 @@ async function openMic(): Promise<MediaStream> {
 
 /** Open the other side. Resolves null, never throws: a meeting without Them is
  *  still a meeting. The video track main had to include is dropped at once. */
-async function openLoopback(): Promise<MediaStream | null> {
+async function openLoopback(): Promise<{ stream: MediaStream | null; failure: ThemFailure | null }> {
   try {
-    if (!navigator.mediaDevices?.getDisplayMedia) return null;
+    if (!navigator.mediaDevices?.getDisplayMedia) return { stream: null, failure: 'unsupported' };
     const s = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true });
     s.getVideoTracks().forEach((t) => { t.stop(); s.removeTrack(t); });
-    if (s.getAudioTracks().length === 0) return null;
-    return s;
-  } catch {
-    return null;
+    if (s.getAudioTracks().length === 0) {
+      // Main answered with a screen but no loopback track: not Windows, or
+      // the Stapler flag is off on the main side.
+      s.getTracks().forEach((t) => t.stop());
+      return { stream: null, failure: 'no-audio' };
+    }
+    return { stream: s, failure: null };
+  } catch (e) {
+    console.warn('[stapler] system audio not captured:', e);
+    return { stream: null, failure: classifyThemFailure(e) };
   }
 }
 
 async function start(): Promise<void> {
   if (state.status !== 'idle') return;
-  setState({ status: 'starting', error: null, elapsed: 0, pending: 0 });
+  setState({ status: 'starting', error: null, elapsed: 0, pending: 0, themFailure: null });
+  // System audio FIRST: getDisplayMedia needs the click that started us to be
+  // recent, and the microphone has no such clock.
+  const loopback = await openLoopback();
+  const loop = loopback.stream;
   let mic: MediaStream;
   try {
     mic = await openMic();
   } catch (e) {
+    loop?.getTracks().forEach((t) => t.stop());
     setState({ status: 'idle', error: e instanceof Error ? e.message : 'could not open microphone' });
     return;
   }
-  const loop = await openLoopback();
   const startedAt = new Date();
   const meeting: StaplerMeeting = {
     id: newMeetingId(startedAt),
@@ -298,7 +309,7 @@ async function start(): Promise<void> {
     setState({ status: 'idle', error: 'recording not supported' });
     return;
   }
-  setState({ status: 'recording', meeting, themAvailable: !!loop, markdownPath: null });
+  setState({ status: 'recording', meeting, themAvailable: !!loop, themFailure: loopback.failure, markdownPath: null });
   tick = setInterval(() => setState({ elapsed: Math.floor((Date.now() - startMs) / 1000) }), 1000);
   scheduleSave();
 }

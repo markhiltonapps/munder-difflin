@@ -214,6 +214,7 @@
     "youDetail": "麦克风",
     "themDetail": "系统音频",
     "themMissing": "本次会议未采集",
+    "themFailure": {"gesture": "系统音频需要一次点击——请在此按“录制”，或使用本版本起支持的快捷键", "denied": "系统音频被拒绝——请在设置 → 语音中确认订书机已开启", "no-audio": "此电脑无系统音频（仅限 Windows）——仅麦克风", "unsupported": "此处无法采集系统音频——仅麦克风", "error": "无法打开系统音频——仅麦克风"},
     "themUnsupported": "采集系统音频需要 Windows — 此处仅录麦克风",
     "transcribing": "{{count}} 段正在转写…",
     "hotkey": "在任何应用中按 Ctrl+Shift+Space 开始或停止会议",

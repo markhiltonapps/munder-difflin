@@ -154,7 +154,8 @@ export function StaplerTab() {
           on={(recording || st.status === 'starting') && st.themAvailable === true}
           label={t('stapler.them')}
           detail={
-            st.themAvailable === false ? (loopback === false ? t('stapler.themUnsupported') : t('stapler.themMissing'))
+            st.themAvailable === false
+              ? (loopback === false ? t('stapler.themUnsupported') : st.themFailure ? t(`stapler.themFailure.${st.themFailure}`) : t('stapler.themMissing'))
               : loopback === false ? t('stapler.themUnsupported') : t('stapler.themDetail')
           }
         />

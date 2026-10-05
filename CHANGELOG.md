@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
+- **Stapler captures the other side when started from the hotkey or the floating window.** The
+  browser only hands out system audio right after a click. A meeting started with Ctrl+Shift+Space
+  or from the widget had no click behind it, so it quietly fell back to the microphone alone, and
+  the other party was heard only as speaker bleed into your mic. Those starts now carry the click,
+  system audio is requested first while it is fresh, and when it still cannot be captured the
+  Them line says why instead of just "not captured".
 - **Showcase thumbnails and pages render.** The window's content policy did not allow the
   app's own file scheme, so every thumbnail was a broken image. Fixed.
 - **A clicked terminal path opens on Windows.** The file matched its workspace only when both

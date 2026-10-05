@@ -171,6 +171,11 @@ export function App() {
       }
     };
     let lastForwarded = 0;
+    // Main calls this through executeJavaScript(…, userGesture=true) for the
+    // global hotkey and the floating widget, so the start carries the click
+    // the browser demands before it hands out system audio. The IPC below is
+    // the fallback for a window where the hook is not yet installed.
+    (window as unknown as { __cthStaplerToggle?: () => void }).__cthStaplerToggle = () => { lastForwarded = Date.now(); toggle(); };
     const unsub = window.cth.onStaplerToggle?.(() => { lastForwarded = Date.now(); toggle(); }) ?? (() => {});
     const onKey = (e: KeyboardEvent): void => {
       if (!(e.ctrlKey || e.metaKey) || !e.shiftKey || e.code !== 'Space') return;
@@ -178,7 +183,11 @@ export function App() {
       setTimeout(() => { if (Date.now() - lastForwarded > 300) toggle(); }, 150);
     };
     window.addEventListener('keydown', onKey, true);
-    return () => { unsub(); window.removeEventListener('keydown', onKey, true); };
+    return () => {
+      unsub();
+      window.removeEventListener('keydown', onKey, true);
+      delete (window as unknown as { __cthStaplerToggle?: () => void }).__cthStaplerToggle;
+    };
   }, []);
 
   // Config subscription — the copy loaded above would otherwise go stale the

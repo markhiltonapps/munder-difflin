@@ -4721,6 +4721,7 @@ ipcMain.handle('stapler:delete', (_evt, id: unknown) => (isMeetingId(id) ? stapl
 // The floating Stapler (widget + crop overlay). Windows are created lazily;
 // nothing here touches the screen until the user turns the widget on.
 const staplerWindows = new StaplerWindows({
+  forwardToggle: (wc) => forwardStaplerToggle(wc),
   persist: { getKv: (k) => persist.getKv(k), setKv: (k, v) => persist.setKv(k, v) },
   load: (win, hash) => {
     if (isDev && process.env.ELECTRON_RENDERER_URL) win.loadURL(`${process.env.ELECTRON_RENDERER_URL}#${hash}`);
@@ -4739,6 +4740,16 @@ registerStaplerWindowIpc(ipcMain, staplerWindows);
  *  moment it is switched off, so a disabled feature holds no key. The
  *  renderer owns the recorder; main only forwards the press. */
 const STAPLER_SHORTCUT = 'CommandOrControl+Shift+Space';
+/** Start/stop a meeting in the renderer WITH a user gesture. getDisplayMedia
+ *  (the system-audio side) refuses a request that no recent click backs, so a
+ *  plain IPC from the hotkey or the widget always came back microphone-only.
+ *  executeJavaScript's second argument runs the call as a gesture. */
+export function forwardStaplerToggle(wc: Electron.WebContents): void {
+  if (wc.isDestroyed()) return;
+  wc.executeJavaScript("typeof window.__cthStaplerToggle === 'function' ? (window.__cthStaplerToggle(), true) : false", true)
+    .then((handled) => { if (handled !== true && !wc.isDestroyed()) wc.send('stapler:toggle'); })
+    .catch(() => { if (!wc.isDestroyed()) wc.send('stapler:toggle'); });
+}
 function syncStaplerShortcut(): void {
   if (!app.isReady()) return;
   const want = readConfig().staplerEnabled === true;
@@ -4748,7 +4759,7 @@ function syncStaplerShortcut(): void {
       globalShortcut.register(STAPLER_SHORTCUT, () => {
         const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : BrowserWindow.getAllWindows()[0];
         if (!win) return;
-        win.webContents.send('stapler:toggle');
+        forwardStaplerToggle(win.webContents);
       });
     } catch { /* another app owns the chord — the in-app shortcut still works */ }
   } else if (!want && have) {

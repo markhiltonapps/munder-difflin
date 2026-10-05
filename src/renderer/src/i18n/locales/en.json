@@ -214,6 +214,7 @@
     "youDetail": "microphone",
     "themDetail": "system audio",
     "themMissing": "not captured this meeting",
+    "themFailure": {"gesture": "system audio needs a click — press Record here, or use the hotkey from this build on", "denied": "system audio was refused — check Stapler is on in Settings → Voice", "no-audio": "no system audio on this computer (Windows only) — microphone only", "unsupported": "system audio capture is not available here — microphone only", "error": "system audio could not be opened — microphone only"},
     "themUnsupported": "system audio capture needs Windows — microphone only here",
     "transcribing": "{{count}} chunk(s) transcribing…",
     "hotkey": "Ctrl+Shift+Space starts and stops a meeting from any app",

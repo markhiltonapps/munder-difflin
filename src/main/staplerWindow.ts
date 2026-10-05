@@ -31,6 +31,8 @@ import {
 } from '../shared/staplerWidget';
 
 export interface StaplerWindowDeps {
+  /** Forward a meeting toggle to the main renderer with a user gesture. */
+  forwardToggle?: (wc: Electron.WebContents) => void;
   /** Durable kv (position, open, invisible). */
   persist: { getKv<T = unknown>(key: string): T | undefined; setKv(key: string, value: unknown): void };
   /** Load the renderer into a window at a hash route ('stapler' / 'stapler-crop'). */
@@ -233,6 +235,15 @@ export class StaplerWindows {
     if (w && !w.isDestroyed()) w.webContents.send(channel, payload);
   }
 
+  /** The widget's record button: forwarded with a user gesture (see
+   *  forwardStaplerToggle in index.ts) so system audio is captured. */
+  toggleMeeting(): void {
+    const m = this.deps.getMainWindow();
+    if (!m || m.isDestroyed()) return;
+    if (this.deps.forwardToggle) this.deps.forwardToggle(m.webContents);
+    else m.webContents.send('stapler:toggle');
+  }
+
   sendToMain(channel: string, payload?: unknown): void {
     const m = this.deps.getMainWindow();
     if (m && !m.isDestroyed()) m.webContents.send(channel, payload);
@@ -369,7 +380,7 @@ export function registerStaplerWindowIpc(ipc: IpcMain, sw: StaplerWindows): void
   ipc.on('stapler:widget:focusMain', () => sw.focusMain());
   // Widget → primary: the meeting toggle rides the same channel as the global
   // chord, so App's one listener handles both.
-  ipc.on('stapler:widget:toggleMeeting', () => sw.sendToMain('stapler:toggle'));
+  ipc.on('stapler:widget:toggleMeeting', () => sw.toggleMeeting());
   ipc.on('stapler:widget:deliver', (_e, arg: unknown) => {
     const a = (arg ?? {}) as { agentId?: unknown; text?: unknown };
     if (typeof a.agentId !== 'string' || typeof a.text !== 'string' || !a.text.trim()) return;
