@@ -710,6 +710,8 @@
     "ossModels": "OSS models",
     "ossLocal": "Local · no key (Ollama / LM Studio)",
     "ossByok": "Via OSS provider · BYOK",
+    "anyModel": "Model id",
+    "anyModelPlaceholder": "type any model id, e.g. openrouter/deepseek/deepseek-v4-pro-0813",
     "ossLocalTitle": "{{slug}} · needs ~{{ram}} RAM — pull with: ollama pull {{tag}}",
     "ossByokTitle": "{{slug}} · set {{keyEnv}} in Settings → AI Engines",
     "byokNote": "BYOK keys & local endpoints for this engine live in Settings → AI Engines. New to local models? Read run on open models or set up on a Mac Mini. Live end-to-end is pending real model calls (verify on-device).",

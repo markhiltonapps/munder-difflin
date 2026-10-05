@@ -993,6 +993,21 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                       </Row>
                     )}
 
+                    {/* Any model id, typed: the chips are a shortlist, and a
+                        provider like OpenRouter lists hundreds more. Typing
+                        rebuilds the command the same way a chip click does. */}
+                    {provider !== 'custom' && preset.supportsModel && (
+                      <Row label={tr('addAgent.anyModel')}>
+                        <input
+                          value={model ?? ''}
+                          onChange={(e) => pickModel(e.target.value.trim() || undefined)}
+                          placeholder={tr('addAgent.anyModelPlaceholder')}
+                          spellCheck={false}
+                          style={{ ...inputStyle, fontFamily: 'var(--cth-font-mono)' }}
+                        />
+                      </Row>
+                    )}
+
                     {(provider === 'opencode' || provider === 'crush' || provider === 'pi' || provider === 'qwen') && (
                       <div style={{ fontSize: 12, color: 'var(--cth-ink-500)', lineHeight: '16px', margin: '2px 0 6px' }}>
                         {tr('addAgent.byokNote')}

@@ -710,6 +710,8 @@
     "ossModels": "开源模型",
     "ossLocal": "本地 · 无需密钥（Ollama / LM Studio）",
     "ossByok": "通过 OSS 提供商 · BYOK",
+    "anyModel": "模型 ID",
+    "anyModelPlaceholder": "输入任意模型 ID，例如 openrouter/deepseek/deepseek-v4-pro-0813",
     "ossLocalTitle": "{{slug}} · 约需 {{ram}} 内存——拉取：ollama pull {{tag}}",
     "ossByokTitle": "{{slug}} · 在设置 → AI 引擎中设置 {{keyEnv}}",
     "byokNote": "该引擎的 BYOK 密钥和本地端点位于 设置 → AI 引擎。本地模型新手？请阅读 在开源模型上运行 或 在 Mac Mini 上配置。端到端实测仍在等待真实模型调用（请在设备上验证）。",

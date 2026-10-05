@@ -22,6 +22,9 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Type any model id when hiring.** The Engine step gains a "Model id" box under the quick-picks,
+  so a model the chips do not list, such as one of OpenRouter's hundreds, is a paste away. Typing
+  rebuilds the command the same way a chip click does.
 - **Michael's voice is yours to pick.** Settings → Voice lists the ten voices the realtime model
   speaks with; it applies the next time you start Talk, and the spoken fillers follow it.
 - **The Showcase.** A shelf for the things agents make for you to look at. Agents save a
