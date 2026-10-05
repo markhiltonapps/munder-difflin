@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **"open" on an agent card works on Windows and Linux.** The button opens a system terminal in
+  the agent's folder. It ran the macOS command everywhere, so on Windows it failed with
+  "spawn open ENOENT". Windows now gets Windows Terminal when installed and a plain console
+  otherwise; Linux tries the common terminals in turn.
+
 ### Added
 
 - **A smoother voice conversation with Michael.** Settings → Voice gains three turn-taking

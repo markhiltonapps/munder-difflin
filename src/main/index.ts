@@ -13,6 +13,7 @@ import { PtyManager, type SpawnOptions } from './pty';
 import { resolveCommand as resolveCliCommand, isSafeCommandName } from './shellEnv';
 import { initAutoUpdater, abortPendingRestart } from './updater';
 import { RealtimeFloorWatcher } from './realtimeFloorWatcher';
+import { openTerminalAt } from './openTerminal';
 import {
   readConfig, writeConfig, setAgentTokenCap, resetConfig, onConfigWritten, ensureHarnessHome, ensureClaudePermissionsAccepted,
   modelForRole, OPS_STANDUP_MISSION, HEARTBEAT_MISSION, COMPACT_MAINTENANCE_MISSION, type HarnessConfig, type ScheduledMission
@@ -3196,16 +3197,9 @@ ipcMain.handle('dialog:chooseFolder', async (evt) => {
 // ─── IPC: Terminal.app at a folder ──────────────────────────────────────────
 ipcMain.handle('terminal:openAtFolder', async (_evt, cwd: unknown) => {
   if (typeof cwd !== 'string' || cwd.length === 0) return { ok: false, error: 'invalid cwd' };
-  return new Promise<{ ok: boolean; error?: string }>((resolve) => {
-    const p = spawn('open', ['-a', 'Terminal', cwd]);
-    let err = '';
-    p.stderr.on('data', (d) => { err += d.toString(); });
-    p.on('error', (e) => resolve({ ok: false, error: e.message }));
-    p.on('close', (code) => {
-      if (code === 0) resolve({ ok: true });
-      else resolve({ ok: false, error: err.trim() || `open exited ${code}` });
-    });
-  });
+  // Platform-aware (was the macOS `open -a Terminal` everywhere → "spawn open
+  // ENOENT" on Windows). See openTerminal.ts for the per-platform candidates.
+  return openTerminalAt(cwd);
 });
 
 // ─── IPC: integrations (Phase 2 registry — backend for Ryan's Settings UI) ────
