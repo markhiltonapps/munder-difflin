@@ -10,7 +10,7 @@ All notable changes to this project are documented here. The format is based on
 
 - **The "talk" button is reachable in the sidebar layout.** Two-way voice with Michael lived
   only on his card in the classic strip, which the sidebar layout does not show. It now also
-  sits in the header of his panel on the right, in both layouts.
+  sits in the Command Center header, beside "auto" and "IDE", in both layouts.
 - **"open" on an agent card works on Windows and Linux.** The button opens a system terminal in
   the agent's folder. It ran the macOS command everywhere, so on Windows it failed with
   "spawn open ENOENT". Windows now gets Windows Terminal when installed and a plain console

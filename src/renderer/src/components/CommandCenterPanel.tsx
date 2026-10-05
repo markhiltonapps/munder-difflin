@@ -16,6 +16,7 @@ import { StaplerTab } from './StaplerTab';
 import { acquireTerminal, disposeTerminal, resetTerminal } from './terminalPool';
 import { terminalInstanceKey } from './terminalRecovery';
 import { Icon } from './Icon';
+import { RealtimeMichaelToggle } from './RealtimeMichaelToggle';
 import { MemoryGraphPanel } from './MemoryGraphPanel';
 import { useFleetTelemetry } from '@/hooks/useTelemetry';
 import { COMMAND_GROUPS } from '@shared/claudeCommands';
@@ -209,6 +210,10 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
               {floorDeliveryPaused ? t('commandCenter.deliveryPaused') : t('commandCenter.deliveryAuto')}
             </span>
           </PixelButton>
+          {/* Two-way voice with Michael. His card in the classic strip has this
+              too, but the sidebar layout shows no cards, and this header is
+              what the operator sees when Michael is selected in either layout. */}
+          <RealtimeMichaelToggle />
           {/* Floor-level surface with no agent of its own: the honest target is
               whoever is selected, stated explicitly rather than left to the
               IDE's fallback so the intent is visible at the call site. */}
