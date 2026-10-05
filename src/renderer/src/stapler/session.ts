@@ -48,6 +48,8 @@ export interface StaplerState {
   themFailure: ThemFailure | null;
   /** What main's capture handler decided last (see preload onStaplerThemDiag). */
   themDiag: { reason: string; detail?: string } | null;
+  /** The browser's own words for the failure, for the one screenshot that settles it. */
+  themDetail: string | null;
   /** Live input levels, 0..1, for the meters beside You and Them. */
   levels: { you: number; them: number };
   /** Last error. Capture errors stop the meeting; a transcription error does
@@ -58,7 +60,7 @@ export interface StaplerState {
 }
 
 let state: StaplerState = {
-  status: 'idle', meeting: null, pending: 0, elapsed: 0, themAvailable: null, themFailure: null, themDiag: null, levels: { you: 0, them: 0 }, error: null, markdownPath: null
+  status: 'idle', meeting: null, pending: 0, elapsed: 0, themAvailable: null, themFailure: null, themDiag: null, themDetail: null, levels: { you: 0, them: 0 }, error: null, markdownPath: null
 };
 const listeners = new Set<() => void>();
 function setState(patch: Partial<StaplerState>): void {
@@ -278,27 +280,29 @@ async function openMic(deviceId: string | null): Promise<MediaStream> {
 
 /** Open the other side. Resolves null, never throws: a meeting without Them is
  *  still a meeting. The video track main had to include is dropped at once. */
-async function openLoopback(): Promise<{ stream: MediaStream | null; failure: ThemFailure | null }> {
+async function openLoopback(): Promise<{ stream: MediaStream | null; failure: ThemFailure | null; detail: string | null }> {
   try {
-    if (!navigator.mediaDevices?.getDisplayMedia) return { stream: null, failure: 'unsupported' };
+    if (!navigator.mediaDevices?.getDisplayMedia) return { stream: null, failure: 'unsupported', detail: null };
     const s = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true });
     s.getVideoTracks().forEach((t) => { t.stop(); s.removeTrack(t); });
     if (s.getAudioTracks().length === 0) {
       // Main answered with a screen but no loopback track: not Windows, or
       // the Stapler flag is off on the main side.
       s.getTracks().forEach((t) => t.stop());
-      return { stream: null, failure: 'no-audio' };
+      return { stream: null, failure: 'no-audio', detail: null };
     }
-    return { stream: s, failure: null };
+    return { stream: s, failure: null, detail: null };
   } catch (e) {
     console.warn('[stapler] system audio not captured:', e);
-    return { stream: null, failure: classifyThemFailure(e) };
+    const name = (e && typeof e === 'object' && 'name' in e) ? String((e as { name: unknown }).name) : '';
+    const msg = e instanceof Error ? e.message : String(e ?? '');
+    return { stream: null, failure: classifyThemFailure(e), detail: [name, msg].filter(Boolean).join(': ') || null };
   }
 }
 
 async function start(): Promise<void> {
   if (state.status !== 'idle') return;
-  setState({ status: 'starting', error: null, elapsed: 0, pending: 0, themFailure: null, themDiag: null, levels: { you: 0, them: 0 } });
+  setState({ status: 'starting', error: null, elapsed: 0, pending: 0, themFailure: null, themDiag: null, themDetail: null, levels: { you: 0, them: 0 } });
   // Main reports what its capture handler decided; a refusal then says why.
   offDiag?.();
   offDiag = window.cth.onStaplerThemDiag?.((d) => setState({ themDiag: d })) ?? null;
@@ -343,7 +347,7 @@ async function start(): Promise<void> {
     setState({ status: 'idle', error: 'recording not supported' });
     return;
   }
-  setState({ status: 'recording', meeting, themAvailable: !!loop, themFailure: loopback.failure, markdownPath: null });
+  setState({ status: 'recording', meeting, themAvailable: !!loop, themFailure: loopback.failure, themDetail: loopback.detail, markdownPath: null });
   if (levelTimer) clearInterval(levelTimer);
   levelTimer = setInterval(() => {
     setState({ levels: { you: you?.level ?? 0, them: them?.level ?? 0 } });

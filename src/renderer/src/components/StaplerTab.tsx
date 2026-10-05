@@ -210,9 +210,12 @@ export function StaplerTab() {
           detail={
             st.themAvailable === false
               ? (loopback === false ? t('stapler.themUnsupported')
-                : st.themFailure === 'denied' && st.themDiag && st.themDiag.reason !== 'ok-loopback'
+                : (st.themFailure === 'denied' && st.themDiag && st.themDiag.reason !== 'ok-loopback'
                   ? t(`stapler.themDiag.${st.themDiag.reason}`, { detail: st.themDiag.detail ?? '' })
-                  : st.themFailure ? t(`stapler.themFailure.${st.themFailure}`) : t('stapler.themMissing'))
+                  : st.themFailure === 'denied' && !st.themDiag
+                    ? t('stapler.themDiag.handler-silent')
+                    : st.themFailure ? t(`stapler.themFailure.${st.themFailure}`) : t('stapler.themMissing'))
+                  + (st.themDetail ? ` [${st.themDetail}]` : ''))
               : loopback === false ? t('stapler.themUnsupported') : t('stapler.themDetail')
           }
         />

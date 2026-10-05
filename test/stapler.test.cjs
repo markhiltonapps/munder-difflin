@@ -274,6 +274,6 @@ test('the capture handler reports its decision, treats an absent flag as on, and
   assert.match(tab, /level=\{recording && st\.themAvailable \? st\.levels\.them : undefined\}/);
   for (const code of ['en', 'zh-CN', 'ar']) {
     const l = JSON.parse(read(`src/renderer/src/i18n/locales/${code}.json`));
-    assert.deepEqual(Object.keys(l.stapler.themDiag).sort(), ['capturer-error', 'flag-off', 'frame-fallback', 'no-source', 'ok-loopback', 'ok-video-only'], code);
+    assert.deepEqual(Object.keys(l.stapler.themDiag).sort(), ['capturer-error', 'flag-off', 'frame-fallback', 'handler-silent', 'no-source', 'ok-loopback', 'ok-video-only'], code);
   }
 });
