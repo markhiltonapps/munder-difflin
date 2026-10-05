@@ -15,6 +15,8 @@ import { initAutoUpdater, abortPendingRestart } from './updater';
 import { RealtimeFloorWatcher } from './realtimeFloorWatcher';
 import { openTerminalAt } from './openTerminal';
 import { ShowcaseStore, serveShowcase } from './showcase';
+import { PayrollService } from './payroll';
+import { setPriceOverrides } from './pricing';
 import { SHOWCASE_SCHEME, showcaseKind } from '../shared/showcase';
 import {
   readConfig, writeConfig, setAgentTokenCap, resetConfig, onConfigWritten, ensureHarnessHome, ensureClaudePermissionsAccepted,
@@ -4658,6 +4660,11 @@ function showcase(): ShowcaseStore {
   return showcaseInst;
 }
 ipcMain.handle('showcase:list', () => ({ root: showcase().root, items: showcase().list() }));
+
+// ─── IPC: Payroll (per-agent tokens + cost by window) ─────────────────────────
+const payrollService = new PayrollService(() => { const r = hive.root(); return r ? join(r, 'cost-ledger.jsonl') : null; });
+setPriceOverrides(readConfig().modelPriceOverrides);
+ipcMain.handle('payroll:summary', () => payrollService.summary());
 ipcMain.handle('showcase:markSeen', (_evt, rel: unknown) => ({ ok: typeof rel === 'string' && showcase().markSeen(rel) }));
 /** Open a deliverable in the default app (a page in the browser, a PDF in the
  *  reader). Only files the gallery lists, or ones the terminal verified as a
@@ -5799,6 +5806,9 @@ app.on('before-quit', (e) => {
 // Every window loads the config once at start-up, so tell them all when a
 // setting is saved — a floor left out would keep showing what it opened with.
 onConfigWritten((config) => {
+  // The payroll's price table follows the owner's overrides the moment they save.
+  setPriceOverrides(config.modelPriceOverrides);
+  payrollService.invalidate();
   for (const w of allWindows) {
     if (w.isDestroyed() || w.webContents.isDestroyed()) continue;
     w.webContents.send('config:changed', config);

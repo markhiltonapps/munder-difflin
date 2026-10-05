@@ -554,6 +554,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   );
   // Turn-taking: pace (semantic-VAD eagerness), barge-in, spoken tool filler.
   const [voicePace, setVoicePace] = useState<string>((config as HarnessConfig).realtimePace ?? 'balanced');
+  const [priceOverrides, setPriceOverrides] = useState<string>((config as HarnessConfig).modelPriceOverrides ?? '');
   const [voiceName, setVoiceName] = useState<string>((config as HarnessConfig).realtimeVoice ?? 'cedar');
   const [voiceBargeIn, setVoiceBargeIn] = useState<boolean>((config as HarnessConfig).realtimeBargeIn !== false);
   const [voiceToolFiller, setVoiceToolFiller] = useState<boolean>((config as HarnessConfig).realtimeToolFiller !== false);
@@ -586,6 +587,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
       setFreeflowModel(cc.freeflowModel ?? 'whisper-large-v3-turbo');
       setIdleDisconnectMs((c as HarnessConfig).realtimeIdleDisconnectMs ?? 180_000);
       setVoicePace((c as HarnessConfig).realtimePace ?? 'balanced');
+      setPriceOverrides((c as HarnessConfig).modelPriceOverrides ?? '');
       setVoiceName((c as HarnessConfig).realtimeVoice ?? 'cedar');
       setVoiceBargeIn((c as HarnessConfig).realtimeBargeIn !== false);
       setVoiceToolFiller((c as HarnessConfig).realtimeToolFiller !== false);
@@ -1364,6 +1366,22 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                               {brkEnabled ? t('common.on') : t('common.off')}
                             </PixelButton>
                           </div>
+                          {/* Payroll price overrides: the built-in table is approximate and
+                              prices move; the owner can pin any model's rate here. */}
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 4, ...slackLabelStyle, maxWidth: 560 }}>
+                            {t('settings.autonomy.priceOverrides')}
+                            <textarea
+                              value={priceOverrides}
+                              onChange={(e) => { setPriceOverrides(e.target.value); stage({ modelPriceOverrides: e.target.value } as Partial<HarnessConfig>); }}
+                              placeholder={t('settings.autonomy.priceOverridesPlaceholder')}
+                              rows={3}
+                              spellCheck={false}
+                              style={{ ...slackInputStyle, fontFamily: 'var(--cth-font-mono)', resize: 'vertical' }}
+                            />
+                            <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)', textTransform: 'none' }}>
+                              {t('settings.autonomy.priceOverridesDesc')}
+                            </span>
+                          </label>
                           <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
                             <label style={{ display: 'flex', flexDirection: 'column', gap: 4, ...slackLabelStyle }}>
                               {t('settings.autonomy.floorBudget')}

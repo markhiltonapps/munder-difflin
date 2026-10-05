@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { payrollLineFor, usePayroll } from '@/payroll/store';
 import { useTranslation } from 'react-i18next';
 import { AgentCard } from './AgentCard';
 import { PixelButton } from './PixelButton';
@@ -21,6 +22,17 @@ export function AgentStrip({ config }: AgentStripProps) {
   const restorableAgents = useStore(s => s.restorableAgents);
   const selectedId = useStore(s => s.selectedId);
   const select = useStore(s => s.select);
+  const payrollState = usePayroll();
+  const costLines = useMemo(() => {
+    const labels = {
+      today: t('payroll.today'), week: t('payroll.week'), month: t('payroll.month'), all: t('payroll.all'),
+      apiEq: t('payroll.apiEquivalent'), unknown: t('payroll.unknownPrice')
+    };
+    const out: Record<string, { line: string; title: string }> = {};
+    if (!payrollState.loaded) return out;
+    for (const p of payrollState.summary?.agents ?? []) { const l = payrollLineFor(p, labels); if (l) out[p.agentId] = l; }
+    return out;
+  }, [payrollState, t]);
   const setAddAgentOpen = useStore(s => s.setAddAgentOpen);
   const openTaskDetail = useStore(s => s.openTaskDetail);
   const reorderAgents = useStore(s => s.reorderAgents);
@@ -154,6 +166,8 @@ export function AgentStrip({ config }: AgentStripProps) {
             }}
             note={a.note}
             onEditNote={a.isGod ? undefined : () => setNoteEditId(a.id)}
+            costLine={costLines[a.id]?.line}
+            costTitle={costLines[a.id]?.title}
           />
           {/* The note itself lives INSIDE the card (its own row above the gauge).
               This is the transient EDITOR: a fixed popover ABOVE the card —

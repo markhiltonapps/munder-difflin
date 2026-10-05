@@ -4,6 +4,7 @@ import { PixelBadge } from './PixelBadge';
 import { PixelButton } from './PixelButton';
 import { Icon, type IconName } from './Icon';
 import { useShowcase } from '@/showcase/store';
+import { usePayrollLine } from '@/payroll/store';
 import { SpritePortrait } from './SpritePortrait';
 import { useHasTerminalDraft } from './terminalPool';
 import { groupByRepo, useResolvedRepoNames } from './repoGroups';
@@ -46,7 +47,8 @@ const SURFACES: { key: string; labelKey: string; icon: IconName }[] = [
   { key: 'human',    labelKey: 'officeSidebar.inbox',        icon: 'bell' },
   { key: 'triggers', labelKey: 'officeSidebar.automations',  icon: 'clock' },
   { key: 'memory',   labelKey: 'officeSidebar.memory',       icon: 'sparkle' },
-  { key: 'skills',   labelKey: 'officeSidebar.capabilities', icon: 'mcp' }
+  { key: 'skills',   labelKey: 'officeSidebar.capabilities', icon: 'mcp' },
+  { key: 'payroll',  labelKey: 'officeSidebar.payroll',      icon: 'ledger' }
 ];
 
 const POLL_MS = 5000;
@@ -456,6 +458,10 @@ function SidebarAgentRow({
   const typing = useHasTerminalDraft(agent.ptyId);
   const bullets = (agent.note ?? '').split('\n').map(s => s.trim()).filter(Boolean);
   const live = liveLineFor(agent);
+  const cost = usePayrollLine(agent.id, {
+    today: t('payroll.today'), week: t('payroll.week'), month: t('payroll.month'), all: t('payroll.all'),
+    apiEq: t('payroll.apiEquivalent'), unknown: t('payroll.unknownPrice')
+  });
   const dragging = drag.dragId === agent.id;
   const dropTarget = drag.overId === agent.id && !!drag.dragId && drag.dragId !== agent.id;
 
@@ -525,6 +531,17 @@ function SidebarAgentRow({
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
             }}
           >{live}</span>
+        )}
+        {/* Payroll line: model, tokens and cost today; the hover text has all four windows. */}
+        {!compact && cost && (
+          <span
+            title={cost.title}
+            style={{
+              fontSize: 11, lineHeight: '14px', color: 'var(--cth-ink-500)',
+              fontFamily: 'var(--cth-font-mono)',
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+            }}
+          >{cost.line}</span>
         )}
         {(asks > 0 || doingCount > 0) && (
           <span style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>

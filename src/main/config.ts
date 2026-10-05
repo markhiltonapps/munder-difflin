@@ -237,6 +237,9 @@ export interface HarnessConfig {
    *  their guard, but the token cap (costCapTokens) is the real budget —
    *  scheduled for removal next release. */
   costCapUsd?: number;
+  /** Payroll price overrides: one per line, `model-id input output [cacheRead cacheWrite]`
+   *  in USD per million tokens, matched by substring. Empty = built-in table. */
+  modelPriceOverrides?: string;
   /** Hard TOKEN ceiling (total tokens across all active agents) before the
    *  breaker trips. The user-facing budget — set in Settings. Opt-in like the
    *  $-cap; total = input + output + cacheRead + cacheCreation, summed across the

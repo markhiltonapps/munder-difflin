@@ -328,6 +328,7 @@ export interface HarnessConfig {
   /** Michael's voice (one of the realtime model's voices). Default 'cedar'. */
   realtimeVoice?: string;
   costCapUsd?: number;
+  modelPriceOverrides?: string;
   costCapTokens?: number;
   agentTokenCaps?: Record<string, number>;
   autoDeliveryPausedAgents?: string[];
@@ -1434,6 +1435,8 @@ const api = {
     ipcRenderer.invoke('showcase:list'),
   showcaseMarkSeen: (rel: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('showcase:markSeen', rel),
   showcaseOpen: (abs: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('showcase:open', abs),
+  /** Payroll: per-agent tokens and cost by window, folded from the cost ledger. */
+  payrollSummary: (): Promise<import('../shared/payroll').PayrollSummary> => ipcRenderer.invoke('payroll:summary'),
   onShowcaseChanged: (cb: () => void): (() => void) => {
     const listener = (): void => cb();
     ipcRenderer.on('showcase:changed', listener);

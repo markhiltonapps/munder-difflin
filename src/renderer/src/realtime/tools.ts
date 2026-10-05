@@ -232,6 +232,38 @@ export function realtimeReadTools(): ReturnType<typeof tool>[] {
         }, 'token usage')
     }),
 
+    // ── get_payroll ───────────────────────────────────────────────────────
+    tool({
+      name: 'get_payroll',
+      description:
+        'What each agent has COST: tokens and dollars per agent for today, the last 7 days, the last 30 days and all time, plus which model each runs on. Call this for "who is my most expensive agent", "what did Oscar cost this week", or any cost / spend / budget question. Claude agents on a subscription report an API-equivalent figure, not a bill.',
+      parameters: {
+        type: 'object',
+        properties: {
+          window: { type: 'string', enum: ['today', 'week', 'month', 'all'], description: 'Which window to report. Default month.' }
+        },
+        required: [],
+        additionalProperties: false
+      },
+      execute: (input) =>
+        spoken(async () => {
+          const w = (obj(input).window as 'today' | 'week' | 'month' | 'all') || 'month';
+          const s = await window.cth.payrollSummary();
+          if (!s || s.empty || !s.agents.length) return 'No usage has been recorded in the cost ledger yet.';
+          const { useStore } = await import('@/store/store');
+          const agents = useStore.getState().agents;
+          const nameOf = (id: string): string => agents.find((a) => a.id === id)?.name ?? id;
+          const label = { today: 'today', week: 'over the last seven days', month: 'over the last thirty days', all: 'all time' }[w];
+          const rows = [...s.agents].sort((a, b) => b.windows[w].usd - a.windows[w].usd || b.windows[w].tokens - a.windows[w].tokens);
+          const top = rows.slice(0, 5).map((a) => {
+            const t = a.windows[w];
+            return `${nameOf(a.agentId)} on ${a.model ? a.model.split('/').pop() : 'an unknown model'}: ${tokens(t.tokens)} tokens, about ${t.usd < 0.01 ? 'under a cent' : `${t.usd.toFixed(2)} dollars`}${a.claude ? ' API-equivalent' : ''}`;
+          });
+          const floor = s.floor[w];
+          return `${label[0].toUpperCase()}${label.slice(1)} the floor used ${tokens(floor.tokens)} tokens, about ${floor.usd.toFixed(2)} dollars across ${plural(s.agents.length, 'agent')}. ${top.join('. ')}.${s.unknownModels.length ? ` ${plural(s.unknownModels.length, 'model')} had no price on file, so those figures are a floor.` : ''}`;
+        }, 'payroll')
+    }),
+
     // ── get_triggers ──────────────────────────────────────────────────────
     tool({
       name: 'get_triggers',

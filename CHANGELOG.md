@@ -22,6 +22,15 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Payroll.** Who is on the floor, what they run on, and what they cost. Every agent's row in the
+  sidebar and on the classic cards gains a line with its model, tokens and cost today; hovering
+  shows the last 7 days, 30 days and all time. The new Payroll tab in the Command Center lists
+  every agent with the four windows side by side, sortable, with the floor total and a CSV export.
+  Claude agents on a subscription are shown at API-equivalent rates and marked as such; the other
+  engines are priced from a built-in table (DeepSeek, Qwen, Llama, Gemini, OpenAI and more) that
+  you can override in Settings → Autonomy & Budgets. A model with no price on file is flagged and
+  counted at zero rather than guessed. Ask Michael "who is my most expensive agent this month" and
+  he reads the same numbers.
 - **Type any model id when hiring.** The Engine step gains a "Model id" box under the quick-picks,
   so a model the chips do not list, such as one of OpenRouter's hundreds, is a paste away. Typing
   rebuilds the command the same way a chip click does.

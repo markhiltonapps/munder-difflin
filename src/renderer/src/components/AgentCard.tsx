@@ -37,6 +37,9 @@ export interface AgentCardProps {
   /** Number of ledger tasks this agent is actively DOING — rendered as a blue
    *  sticky note stuck to the card. Clicking it opens the first task's detail. */
   doingCount?: number;
+  /** Payroll line (model · tokens · cost today) and its hover text. */
+  costLine?: string;
+  costTitle?: string;
   onTaskNoteClick?: () => void;
   draggable?: boolean; // must sit on the <button> itself — Chromium won't start a drag on an ancestor from inside a form control
   /** Private note — rendered as the card's own row (v0.3.4) so it can never
@@ -57,7 +60,7 @@ const fmtK = (n: number): string => `${Math.round(n / 1000)}k`;
 export function AgentCard({
   name, character, accent, status, ptyId, project, action, progress = 0,
   contextTokens, contextLimit, selected, isGod, onClick, onRename,
-  doingCount = 0, onTaskNoteClick, draggable, note, onEditNote
+  doingCount = 0, onTaskNoteClick, draggable, note, onEditNote, costLine, costTitle
 }: AgentCardProps) {
   const { t } = useTranslation();
   const [hover, setHover] = useState(false);
@@ -239,6 +242,9 @@ export function AgentCard({
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
               }}
             >{infoLine}</div>
+            {costLine && (
+              <div title={costTitle} style={{ fontSize: 10, lineHeight: '13px', color: 'var(--cth-ink-500)', fontFamily: 'var(--cth-font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{costLine}</div>
+            )}
 
             {/* God: voice on its own compact row. Workers: the private note row.
                 Both sit ABOVE the gauge, so it is never covered. */}

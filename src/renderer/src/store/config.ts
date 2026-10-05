@@ -121,6 +121,7 @@ export interface HarnessConfig {
   realtimeToolFiller?: boolean;
   realtimeVoice?: string;
   costCapUsd?: number;
+  modelPriceOverrides?: string;
   /** Hard total-token ceiling across active agents (the user-facing budget). */
   costCapTokens?: number;
   /** Per-agent total-token ceiling, keyed by agent id. Overrides the floor budget
