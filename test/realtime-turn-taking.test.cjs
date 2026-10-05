@@ -190,7 +190,7 @@ test('the session reads pace, barge-in and filler from config and routes context
 
 test('the three settings exist in every config surface with matching defaults', () => {
   const main = read('src/main/config.ts');
-  for (const k of ['realtimePace', 'realtimeBargeIn', 'realtimeToolFiller']) {
+  for (const k of ['realtimePace', 'realtimeBargeIn', 'realtimeToolFiller', 'realtimeVoice']) {
     assert.match(main, new RegExp(`${k}\\?:`), `${k} in HarnessConfig`);
     assert.match(read('src/renderer/src/store/config.ts'), new RegExp(`${k}\\?:`), `${k} in renderer config`);
     assert.match(read('src/preload/index.ts'), new RegExp(`${k}\\?:`), `${k} in preload`);
@@ -202,12 +202,17 @@ test('the three settings exist in every config surface with matching defaults', 
   assert.match(policy, /realtimePace: \{ tier: 'soft', type: 'string', values: \['eager', 'balanced', 'patient'\] \}/);
   assert.match(policy, /realtimeBargeIn: \{ tier: 'soft', type: 'boolean' \}/);
   assert.match(policy, /realtimeToolFiller: \{ tier: 'soft', type: 'boolean' \}/);
+  assert.match(policy, /realtimeVoice: \{ tier: 'soft', type: 'string', values: \[/);
+  // The session and the filler clips speak with the chosen voice.
+  const session = read('src/renderer/src/realtime/session.ts');
+  assert.match(session, /normalizeVoice\(voiceCfg\.realtimeVoice/);
+  assert.match(read('src/main/realtime.ts'), /\$\{TTS_MODEL\}\|\$\{chosen\}\|\$\{phrase\}/);
 });
 
 test('the filler clip never exposes or logs the OpenAI key and is cached by content', () => {
   const src = read('src/main/realtime.ts');
   assert.match(src, /ipcMain\.handle\('realtime:fillerClip'/);
-  assert.match(src, /createHash\('sha1'\)\.update\(`\$\{TTS_MODEL\}\|\$\{phrase\}`\)/);
+  assert.match(src, /createHash\('sha1'\)\.update\(`\$\{TTS_MODEL\}\|\$\{chosen\}\|\$\{phrase\}`\)/);
   assert.doesNotMatch(src, /console\.(log|error)\([^)]*\bkey\b/);
   assert.match(src, /FILLER_MAX_CHARS = 80/);
 });

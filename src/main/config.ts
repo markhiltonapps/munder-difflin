@@ -394,6 +394,9 @@ export interface HarnessConfig {
   /** Play a short spoken filler in Michael's voice the moment a tool call
    *  starts, so a look-up never sounds like dead air. Default true. */
   realtimeToolFiller?: boolean;
+  /** Which of the realtime model's voices Michael speaks with. Default 'cedar'.
+   *  Applies on the next connect (a live session cannot change voice). */
+  realtimeVoice?: string;
 
   // ─── Generic inbound webhook + status API (LEGACY, single-endpoint) ─────────
   // Superseded by `webhookTriggers`, which allows many endpoints over one server
@@ -495,6 +498,7 @@ const DEFAULTS: HarnessConfig = {
   realtimePace: 'balanced',
   realtimeBargeIn: true,
   realtimeToolFiller: true,
+  realtimeVoice: 'cedar',
   webhookEnabled: false,
   webhookSecret: undefined,
   webhookPort: undefined,

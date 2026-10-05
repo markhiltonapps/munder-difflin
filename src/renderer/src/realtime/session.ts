@@ -30,6 +30,7 @@ import { realtimeActionTools } from './actions';
 import { resetRealtimeCost, recordRealtimeUsage, endRealtimeCost, isRealtimeIdle, getRealtimeCostSnapshot } from './costStore';
 import { DeliveryGate, turnDetectionFor } from './turnTaking';
 import { prefetchFillers, withSpokenFiller } from './filler';
+import { normalizeVoice } from '@shared/realtimeVoices';
 
 /**
  * Voice-loop state machine:
@@ -57,7 +58,7 @@ export interface RealtimeMichaelState {
   outputDeviceId: string | null;
 }
 
-/** Voices for gpt-realtime-2 (board: Cedar / Marin). god finalizes in rt-6. */
+/** Fallback voice when config has none; the user picks in Settings → Voice. */
 const REALTIME_VOICE = 'cedar';
 
 /** Warm openers Michael leads with the moment a voice session connects, so he
@@ -369,6 +370,7 @@ export async function connect(): Promise<void> {
     // gets a spoken filler. Re-applied live on config:changed (below).
     const voiceCfg = await window.cth.getConfig();
     const fillerOn = voiceCfg.realtimeToolFiller !== false;
+    const voice = normalizeVoice(voiceCfg.realtimeVoice ?? REALTIME_VOICE);
     const tools = withSpokenFiller([...realtimeReadTools(), ...realtimeActionTools()], {
       shouldPlay: () => fillerOn && !spokeThisResponse,
       sinkId: () => state.outputDeviceId
@@ -383,13 +385,13 @@ export async function connect(): Promise<void> {
       model: mint.sessionConfig.model,
       config: {
         outputModalities: ['audio'],
-        voice: REALTIME_VOICE,
+        voice,
         audio: {
           input: {
             // Natural turn boundaries; barge-in (truncate on interrupt) per settings.
             turnDetection: turnDetectionFor(voiceCfg.realtimePace, voiceCfg.realtimeBargeIn)
           },
-          output: { voice: REALTIME_VOICE }
+          output: { voice }
         }
       }
     });

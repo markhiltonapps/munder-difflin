@@ -1,4 +1,5 @@
 import { useState, useEffect, type CSSProperties } from 'react';
+import { REALTIME_VOICES } from '@shared/realtimeVoices';
 import { useTranslation } from 'react-i18next';
 import { agentModels, type HarnessConfig } from '@/store/config';
 import { useStore } from '@/store/store';
@@ -553,6 +554,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   );
   // Turn-taking: pace (semantic-VAD eagerness), barge-in, spoken tool filler.
   const [voicePace, setVoicePace] = useState<string>((config as HarnessConfig).realtimePace ?? 'balanced');
+  const [voiceName, setVoiceName] = useState<string>((config as HarnessConfig).realtimeVoice ?? 'cedar');
   const [voiceBargeIn, setVoiceBargeIn] = useState<boolean>((config as HarnessConfig).realtimeBargeIn !== false);
   const [voiceToolFiller, setVoiceToolFiller] = useState<boolean>((config as HarnessConfig).realtimeToolFiller !== false);
 
@@ -584,6 +586,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
       setFreeflowModel(cc.freeflowModel ?? 'whisper-large-v3-turbo');
       setIdleDisconnectMs((c as HarnessConfig).realtimeIdleDisconnectMs ?? 180_000);
       setVoicePace((c as HarnessConfig).realtimePace ?? 'balanced');
+      setVoiceName((c as HarnessConfig).realtimeVoice ?? 'cedar');
       setVoiceBargeIn((c as HarnessConfig).realtimeBargeIn !== false);
       setVoiceToolFiller((c as HarnessConfig).realtimeToolFiller !== false);
     }).catch(() => { /* keep prop-seeded values */ });
@@ -2212,6 +2215,23 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
 
                         {/* Turn-taking — the three knobs that decide whether a voice
                             conversation feels fluid: pace, barge-in, spoken filler. */}
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, width: 280 }}>
+                          <span style={slackLabelStyle}>{t('settings.voice.voiceName', { godName })}</span>
+                          <select
+                            value={voiceName}
+                            onChange={(e) => {
+                              setVoiceName(e.target.value);
+                              stage({ realtimeVoice: e.target.value } as Partial<HarnessConfig>);
+                            }}
+                            style={{ ...slackInputStyle, fontFamily: 'var(--cth-font-mono)' }}
+                          >
+                            {REALTIME_VOICES.map((v) => <option key={v} value={v}>{t(`settings.voice.voices.${v}`)}</option>)}
+                          </select>
+                          <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                            {t('settings.voice.voiceNameDesc')}
+                          </span>
+                        </label>
+
                         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, width: 280 }}>
                           <span style={slackLabelStyle}>{t('settings.voice.pace')}</span>
                           <select

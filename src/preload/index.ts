@@ -325,6 +325,8 @@ export interface HarnessConfig {
   realtimeBargeIn?: boolean;
   /** Play a short spoken filler in Michael's voice when a tool call starts. Default true. */
   realtimeToolFiller?: boolean;
+  /** Michael's voice (one of the realtime model's voices). Default 'cedar'. */
+  realtimeVoice?: string;
   costCapUsd?: number;
   costCapTokens?: number;
   agentTokenCaps?: Record<string, number>;

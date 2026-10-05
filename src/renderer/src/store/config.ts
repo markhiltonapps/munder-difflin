@@ -119,6 +119,7 @@ export interface HarnessConfig {
   realtimePace?: 'eager' | 'balanced' | 'patient';
   realtimeBargeIn?: boolean;
   realtimeToolFiller?: boolean;
+  realtimeVoice?: string;
   costCapUsd?: number;
   /** Hard total-token ceiling across active agents (the user-facing budget). */
   costCapTokens?: number;

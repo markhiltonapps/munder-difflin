@@ -241,10 +241,13 @@ export function IdePanel() {
   // for markdown), then clear the queue slot so a later IDE open starts fresh.
   useEffect(() => {
     if (!root) return;
-    const abs = useStore.getState().ideInitialFile;
-    if (!abs) return;
+    const queued = useStore.getState().ideInitialFile;
+    if (!queued) return;
     useStore.getState().setIdeInitialFile(null);
-    const prefix = root.endsWith('/') ? root : `${root}/`;
+    // Compare with one separator style: Windows roots and paths mix \ and /.
+    const abs = queued.replace(/\\/g, '/');
+    const rootSlash = root.replace(/\\/g, '/');
+    const prefix = rootSlash.endsWith('/') ? rootSlash : `${rootSlash}/`;
     if (!abs.startsWith(prefix)) return; // different workspace — tree still lets them browse
     const rel = abs.slice(prefix.length);
     // Same routing as a tree click — an "open in IDE" on a screenshot must land

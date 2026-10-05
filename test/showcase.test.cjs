@@ -145,3 +145,20 @@ test('the three locales carry the same Showcase strings', () => {
     assert.ok(l.commandCenter.tabs.showcase, code);
   }
 });
+
+test('the renderer policy lets the scheme carry images, frames and fetches', () => {
+  const html = read('src/renderer/index.html');
+  const csp = /Content-Security-Policy" content="([^"]+)"/.exec(html)[1];
+  const dir = (name) => (csp.split(';').map((d) => d.trim()).find((d) => d.startsWith(name + ' ')) || '');
+  for (const name of ['img-src', 'frame-src', 'connect-src']) {
+    assert.ok(dir(name).includes('cth-showcase:'), `${name} must allow cth-showcase: — a thumbnail or page is otherwise a broken image`);
+  }
+});
+
+test('an IDE open-file request matches its workspace whatever separator the path uses', () => {
+  const store = read('src/renderer/src/store/store.ts');
+  assert.match(store, /const norm = \(p: string\): string => p\.replace\(\/\\\\\/g, '\/'\);/);
+  const ide = read('src/renderer/src/ide/IdePanel.tsx');
+  assert.match(ide, /const abs = queued\.replace\(\/\\\\\/g, '\/'\);/);
+  assert.match(ide, /const rootSlash = root\.replace\(\/\\\\\/g, '\/'\);/);
+});

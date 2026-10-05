@@ -148,6 +148,7 @@ const SETTING_POLICY: Record<string, {
   realtimePace: { tier: 'soft', type: 'string', values: ['eager', 'balanced', 'patient'] },
   realtimeBargeIn: { tier: 'soft', type: 'boolean' },
   realtimeToolFiller: { tier: 'soft', type: 'boolean' },
+  realtimeVoice: { tier: 'soft', type: 'string', values: ['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse', 'marin', 'cedar'] },
   // confirm: behavior-changing — echo old→new + distinct token
   autoMode: { tier: 'confirm', type: 'boolean' },
   defaultModel: { tier: 'confirm', type: 'string' },

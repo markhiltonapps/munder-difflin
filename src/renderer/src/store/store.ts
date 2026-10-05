@@ -1065,8 +1065,13 @@ export const useStore = create<State>((set, get) => ({
     // Resolve the OWNING agent here rather than in each caller: a terminal link
     // or a Files-tab click often has nothing selected, and the IDE would
     // otherwise fall back to the selection and open the wrong workspace.
-    const owner = s.agents.find((a) => absPath === a.cwd || absPath.startsWith(a.cwd + '/'));
-    set({ ideInitialFile: absPath, ideOpen: true, ideAgentId: owner?.id ?? null });
+    // Separators are normalized on both sides: on Windows a path can arrive
+    // with backslashes (or a mix) while the agent's cwd was written with
+    // slashes, and a prefix test on the raw strings silently missed.
+    const norm = (p: string): string => p.replace(/\\/g, '/');
+    const abs = norm(absPath);
+    const owner = s.agents.find((a) => abs === norm(a.cwd) || abs.startsWith(norm(a.cwd) + '/'));
+    set({ ideInitialFile: abs, ideOpen: true, ideAgentId: owner?.id ?? null });
   },
   // Closing CLEARS the target: the id is scoped to one IDE session, and a stale
   // one left behind would silently win over the selection on the next open from

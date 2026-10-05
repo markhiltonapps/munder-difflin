@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
+- **Showcase thumbnails and pages render.** The window's content policy did not allow the
+  app's own file scheme, so every thumbnail was a broken image. Fixed.
+- **A clicked terminal path opens on Windows.** The file matched its workspace only when both
+  used the same slash, which a Windows path rarely does, so the click did nothing. Fixed.
 - **The "talk" button is reachable in the sidebar layout.** Two-way voice with Michael lived
   only on his card in the classic strip, which the sidebar layout does not show. It now also
   sits in the Command Center header, beside "auto" and "IDE", in both layouts.
@@ -18,6 +22,8 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Michael's voice is yours to pick.** Settings → Voice lists the ten voices the realtime model
+  speaks with; it applies the next time you start Talk, and the spoken fillers follow it.
 - **The Showcase.** A shelf for the things agents make for you to look at. Agents save a
   deliverable — a social post as a web page, an image, a PDF, a markdown report — under
   `showcase/<their id>/` in the hive, and it appears in the new Showcase tab the moment the file

@@ -19,6 +19,8 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { getSecret, hasSecret } from './integrations';
+import { readConfig } from './config';
+import { normalizeVoice } from '../shared/realtimeVoices';
 
 /** Mirrors `providerKeyRef('openai')` in src/main/index.ts (BACKEND_KEY_ENV maps
  *  openai→OPENAI_API_KEY). Inlined as a local const so this module needs no new
@@ -120,9 +122,9 @@ export async function mintRealtimeToken(model: string = REALTIME_MODEL): Promise
 // first play and works offline afterwards.
 const TTS_URL = 'https://api.openai.com/v1/audio/speech';
 const TTS_MODEL = 'gpt-4o-mini-tts';
-/** Michael's realtime voice first; older accounts that do not list it for TTS
- *  fall back to the nearest classic voice. */
-const TTS_VOICES = ['cedar', 'ash'];
+/** Michael's chosen voice first; an account whose TTS tier does not list it
+ *  falls back to a classic voice so the filler still plays. */
+const TTS_FALLBACK_VOICE = 'ash';
 const TTS_TIMEOUT_MS = 20_000;
 const FILLER_MAX_CHARS = 80;
 
@@ -138,14 +140,15 @@ export async function fillerClip(text: unknown): Promise<FillerResult> {
   const phrase = typeof text === 'string' ? text.trim().slice(0, FILLER_MAX_CHARS) : '';
   if (!phrase) return { ok: false, error: 'empty filler' };
   const dir = fillerDir();
-  const file = join(dir, `${createHash('sha1').update(`${TTS_MODEL}|${phrase}`).digest('hex')}.mp3`);
+  const chosen = normalizeVoice(readConfig().realtimeVoice);
+  const file = join(dir, `${createHash('sha1').update(`${TTS_MODEL}|${chosen}|${phrase}`).digest('hex')}.mp3`);
   try {
     if (existsSync(file)) return { ok: true, dataUrl: `data:audio/mpeg;base64,${readFileSync(file).toString('base64')}` };
   } catch { /* regenerate below */ }
   const key = getSecret(OPENAI_KEY_REF);
   if (!key) return { ok: false, error: 'no OpenAI API key set' };
   let lastError = 'text-to-speech failed';
-  for (const voice of TTS_VOICES) {
+  for (const voice of chosen === TTS_FALLBACK_VOICE ? [chosen] : [chosen, TTS_FALLBACK_VOICE]) {
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), TTS_TIMEOUT_MS);
     try {
