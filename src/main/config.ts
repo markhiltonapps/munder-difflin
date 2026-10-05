@@ -341,6 +341,15 @@ export interface HarnessConfig {
    *  done-reply round-trip (a user @-mention → task → result posted back to that
    *  thread) or an agent's own direct in-thread reply — those always stay on. */
   slackProactivePosting?: boolean;
+  /** How Slack reaches us. 'socket' (Socket Mode) opens a WebSocket OUT to
+   *  Slack with the app-level token: no public URL, no tunnel, survives
+   *  restarts. 'webhook' is the Events API: signed POSTs through a tunnel whose
+   *  URL changes every launch. Default webhook only so existing setups keep
+   *  working; new setups are steered to socket. */
+  slackMode?: 'webhook' | 'socket';
+  /** App-level token (xapp-…, scope connections:write) for Socket Mode. Used
+   *  only in main for apps.connections.open; never logged. */
+  slackAppToken?: string;
 
   // ─── Free Flow (voice dictation → message queue) ───────────────────────────
   /** Master toggle for Free Flow push-to-talk dictation. Default OFF: with it off
@@ -463,6 +472,8 @@ const DEFAULTS: HarnessConfig = {
   slackChannelId: undefined,
   slackPort: undefined,
   slackProactivePosting: false,
+  slackMode: 'webhook',
+  slackAppToken: undefined,
   freeflowEnabled: true,
   groqApiKey: undefined,
   freeflowModel: 'whisper-large-v3-turbo',

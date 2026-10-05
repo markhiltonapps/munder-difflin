@@ -299,6 +299,8 @@ export interface HarnessConfig {
   slackChannelId?: string;
   slackPort?: number;
   slackProactivePosting?: boolean;
+  slackMode?: 'webhook' | 'socket';
+  slackAppToken?: string;
   webhookEnabled?: boolean;
   webhookSecret?: string;
   webhookPort?: number;
@@ -1163,8 +1165,17 @@ const api = {
     ipcRenderer.invoke('slack:stop'),
   /** Current connection state + last Request URL (so Settings can hydrate the
    *  "Connected" badge and re-show the persisted tunnel URL on reopen). */
-  slackStatus: (): Promise<{ running: boolean; url?: string }> =>
-    ipcRenderer.invoke('slack:status'),
+  slackStatus: (): Promise<{
+    running: boolean; url?: string; mode: 'webhook' | 'socket';
+    /** Socket Mode only: live link state. */
+    socket?: { connected: boolean; since?: string; error?: string; attempts: number };
+  }> => ipcRenderer.invoke('slack:status'),
+  /** Socket Mode link changes (connected / dropped / erroring), for the Settings badge. */
+  onSlackSocketStatus: (cb: (s: { connected: boolean; since?: string; error?: string; attempts: number }) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, s: { connected: boolean; since?: string; error?: string; attempts: number }): void => cb(s);
+    ipcRenderer.on('slack:socketStatus', listener);
+    return () => ipcRenderer.removeListener('slack:socketStatus', listener);
+  },
   /** Post a reply into a Slack thread (the bot token stays in main). Used for the
    *  renderer's immediate "queued" ack. */
   slackReply: (m: { channel: string; thread_ts: string; text: string }): Promise<{ ok: boolean; error?: string }> =>
@@ -1176,7 +1187,7 @@ const api = {
   /** Persist Slack settings (and stop the server if disabled / secret cleared). */
   slackSetConfig: (patch: {
     signingSecret?: string; botToken?: string; channelId?: string; port?: number; enabled?: boolean;
-    proactivePosting?: boolean;
+    proactivePosting?: boolean; mode?: 'webhook' | 'socket'; appToken?: string;
   }): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('slack:setConfig', patch),
 

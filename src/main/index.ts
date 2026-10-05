@@ -35,7 +35,8 @@ import { MemoryReflector, type ReflectSettings } from './reflect';
 import { PersistStore } from './db';
 import { readAgentUsage, readContextTokens, seedSessionTranscript, resolveSessionCwd } from './transcript';
 import { listIssues, listCIRuns } from './github';
-import { SlackWebhookServer, SlackReplyServer, postSlackReply, type SlackEventFile } from './slack';
+import { SlackWebhookServer, SlackReplyServer, SlackEventRouter, postSlackReply, type SlackEventFile, type SlackInboundMessage } from './slack';
+import { SlackSocketClient, type SlackSocketStatus } from './slackSocket';
 import {
   WebhookServer,
   type WebhookDispatch, type WebhookEndpointRef, type WebhookInbound, type WebhookTaskStatus
@@ -1389,6 +1390,36 @@ function liveWebContents(): Electron.WebContents | null {
 // ─── Slack webhook server (Slack message → Michael's queue) ──────────────────
 /** The running Slack ingestion server, or null when disabled/stopped. */
 let slackServer: SlackWebhookServer | null = null;
+/** The Socket Mode link, when that transport is configured. Exactly one of
+ *  slackServer / slackSocket is live at a time. */
+let slackSocket: SlackSocketClient | null = null;
+let lastSocketStatus: SlackSocketStatus | undefined;
+
+/** Is Slack set up well enough to bring up, for the transport chosen? */
+function slackConfigured(cfg: HarnessConfig): boolean {
+  if (!cfg.slackEnabled) return false;
+  return cfg.slackMode === 'socket' ? !!cfg.slackAppToken : !!cfg.slackSigningSecret;
+}
+
+/** One inbound Slack message, whichever transport carried it: download the
+ *  attachments (bot token stays in main; local paths cross IPC), build the
+ *  per-message autonomy protocol, and hand it to the renderer. */
+async function onSlackInbound(m: SlackInboundMessage): Promise<void> {
+  const localFiles = await downloadSlackFiles(m._rawFiles ?? [], readConfig().slackBotToken);
+  // `text` stays the user's RAW Slack text → drives the readable kanban card
+  // title. `autonomyPreamble` is the authoritative policy block the renderer
+  // prepends ONLY to god's working instruction (his PTY prompt), keeping the
+  // card title human-facing-clean. Built PER MESSAGE so the AUTONOMOUS REQUEST
+  // PROTOCOL carries THIS request's concrete channel, thread_ts, and the
+  // resolved helper path — god hands the worker an exact reply command.
+  const ipcMsg: { text: string; channel: string; ts: string; thread_ts: string; autonomyPreamble: string; files?: typeof localFiles } = {
+    text: m.text, channel: m.channel, ts: m.ts, thread_ts: m.thread_ts,
+    autonomyPreamble: buildAutonomousRequestProtocol(m.channel, m.thread_ts, slackReplyScriptPath())
+  };
+  if (localFiles.length > 0) ipcMsg.files = localFiles;
+  try { liveWebContents()?.send('slack:incomingMessage', ipcMsg); }
+  catch { /* window torn down */ }
+}
 /** The loopback-only reply endpoint (lets the bundled helper post back to Slack
  *  without ever seeing the bot token). Lifecycle is tied to `slackServer`. */
 let slackReplyServer: SlackReplyServer | null = null;
@@ -1693,43 +1724,40 @@ function stopSlackDoneObserver(): void {
  *  disabled or the signing secret is unset. */
 async function startSlackServer(): Promise<{ ok: boolean; url?: string; error?: string }> {
   const cfg = readConfig();
-  if (!cfg.slackEnabled || !cfg.slackSigningSecret) {
-    return { ok: false, error: 'slack disabled or missing signing secret' };
+  if (!slackConfigured(cfg)) {
+    return { ok: false, error: cfg.slackMode === 'socket' ? 'slack disabled or missing app-level token' : 'slack disabled or missing signing secret' };
   }
-  slackServer?.stop();
-  slackServer = new SlackWebhookServer({
-    port: cfg.slackPort && cfg.slackPort > 0 ? cfg.slackPort : 3847,
-    signingSecret: cfg.slackSigningSecret,
-    channelId: cfg.slackChannelId,
-    // Fires from the HTTP server's event loop (not the IPC thread); route through
-    // liveWebContents() so a message arriving during window teardown can't throw.
-    // Downloads any file attachments (bot token stays in main; local paths go to IPC).
-    onMessage: async (m) => {
-      const localFiles = await downloadSlackFiles(
-        m._rawFiles ?? [],
-        readConfig().slackBotToken
-      );
-      // `text` stays the user's RAW Slack text → drives the readable kanban card
-      // title. `autonomyPreamble` is the authoritative policy block the renderer
-      // prepends ONLY to god's working instruction (his PTY prompt), keeping the
-      // card title human-facing-clean. Built PER MESSAGE so the AUTONOMOUS REQUEST
-      // PROTOCOL carries THIS request's concrete channel, thread_ts, and the
-      // resolved helper path — god hands the worker an exact reply command.
-      // Server-side so it applies to every session.
-      const ipcMsg: { text: string; channel: string; ts: string; thread_ts: string; autonomyPreamble: string; files?: typeof localFiles } = {
-        text: m.text, channel: m.channel, ts: m.ts, thread_ts: m.thread_ts,
-        autonomyPreamble: buildAutonomousRequestProtocol(m.channel, m.thread_ts, slackReplyScriptPath())
-      };
-      if (localFiles.length > 0) ipcMsg.files = localFiles;
-      try { liveWebContents()?.send('slack:incomingMessage', ipcMsg); }
-      catch { /* window torn down */ }
-    }
-  });
-  const res = await slackServer.start();
-  // ok:false means we never bound the port → drop the instance. ok:true with no
-  // url just means the tunnel is unavailable; the local handler is still live.
-  if (!res.ok) { slackServer = null; return res; }
-  if (res.url) lastSlackUrl = res.url;
+  slackServer?.stop(); slackServer = null;
+  slackSocket?.stop(); slackSocket = null;
+  let res: { ok: boolean; url?: string; error?: string };
+  if (cfg.slackMode === 'socket') {
+    // Socket Mode: the link is ours and outbound; nothing to paste anywhere.
+    const client = new SlackSocketClient({
+      appToken: cfg.slackAppToken!,
+      router: new SlackEventRouter({ channelId: cfg.slackChannelId, onMessage: onSlackInbound }),
+      onStatus: (s) => {
+        lastSocketStatus = s;
+        try { liveWebContents()?.send('slack:socketStatus', s); } catch { /* window torn down */ }
+      }
+    });
+    res = await client.start();
+    if (!res.ok) return res;
+    slackSocket = client;
+  } else {
+    slackServer = new SlackWebhookServer({
+      port: cfg.slackPort && cfg.slackPort > 0 ? cfg.slackPort : 3847,
+      signingSecret: cfg.slackSigningSecret!,
+      channelId: cfg.slackChannelId,
+      // Fires from the HTTP server's event loop (not the IPC thread); route through
+      // liveWebContents() so a message arriving during window teardown can't throw.
+      onMessage: onSlackInbound
+    });
+    res = await slackServer.start();
+    // ok:false means we never bound the port → drop the instance. ok:true with no
+    // url just means the tunnel is unavailable; the local handler is still live.
+    if (!res.ok) { slackServer = null; return res; }
+    if (res.url) lastSlackUrl = res.url;
+  }
   // Bring up the loopback reply endpoint (token-gated, never tunneled) and drop
   // the discovery file for the bundled helper. Best-effort: reply path being
   // unavailable must not sink ingestion.
@@ -1772,6 +1800,9 @@ async function startSlackReplyServer(): Promise<void> {
 function stopSlackServer(): void {
   try { slackServer?.stop(); } catch (e) { console.error('[slack] stop failed:', e); }
   slackServer = null;
+  try { slackSocket?.stop(); } catch (e) { console.error('[slack] socket stop failed:', e); }
+  slackSocket = null;
+  lastSocketStatus = undefined;
   try { slackReplyServer?.stop(); } catch (e) { console.error('[slack] reply stop failed:', e); }
   slackReplyServer = null;
   stopSlackDoneObserver();
@@ -3353,7 +3384,7 @@ ipcMain.handle('config:changeHome', async (_evt, payload: unknown) => {
       // repointed) so the user loses nothing, and surface the error — no relaunch.
       bootstrapHiveServices();
       const cfg = readConfig();
-      if (cfg.slackEnabled && cfg.slackSigningSecret) void startSlackServer();
+      if (slackConfigured(cfg)) void startSlackServer();
       reconcileWebhookServer();
       return { ok: false, error: `Could not copy data: ${e instanceof Error ? e.message : String(e)}` };
     }
@@ -3470,7 +3501,7 @@ ipcMain.handle('office:import', async (_evt, arg: unknown) => {
     // Nothing was repointed: bring the services back against the unchanged home.
     bootstrapHiveServices();
     const cfg = readConfig();
-    if (cfg.slackEnabled && cfg.slackSigningSecret) void startSlackServer();
+    if (slackConfigured(cfg)) void startSlackServer();
     reconcileWebhookServer();
     return out;
   }
@@ -4277,7 +4308,12 @@ ipcMain.handle('slack:stop', () => {
 });
 /** Current connection state + last Request URL — lets Settings hydrate the
  *  "Connected" badge and re-show the persisted tunnel URL on reopen. */
-ipcMain.handle('slack:status', () => ({ running: slackServer != null, url: lastSlackUrl }));
+ipcMain.handle('slack:status', () => ({
+  running: slackServer != null || slackSocket != null,
+  url: lastSlackUrl,
+  mode: readConfig().slackMode === 'socket' ? 'socket' as const : 'webhook' as const,
+  socket: slackSocket ? slackSocket.status() : lastSocketStatus
+}));
 /** Absolute path to the bundled reply helper, for the prompt the office worker
  *  runs to post its summary back in-thread. No secret crosses this boundary. */
 ipcMain.handle('slack:replyScriptPath', () => slackReplyScriptPath());
@@ -4308,9 +4344,11 @@ ipcMain.handle('slack:reply', (_evt, arg: unknown) => {
 ipcMain.handle('slack:setConfig', (_evt, patch: unknown) => {
   const p = (patch ?? {}) as {
     signingSecret?: unknown; botToken?: unknown; channelId?: unknown; port?: unknown; enabled?: unknown;
-    proactivePosting?: unknown;
+    proactivePosting?: unknown; mode?: unknown; appToken?: unknown;
   };
   const next: Partial<HarnessConfig> = {};
+  if (p.mode === 'webhook' || p.mode === 'socket') next.slackMode = p.mode;
+  if (typeof p.appToken === 'string') next.slackAppToken = p.appToken.trim() || undefined;
   // Trim string fields; an emptied field clears back to undefined.
   if (typeof p.signingSecret === 'string') next.slackSigningSecret = p.signingSecret.trim() || undefined;
   if (typeof p.botToken === 'string') next.slackBotToken = p.botToken.trim() || undefined;
@@ -4323,7 +4361,7 @@ ipcMain.handle('slack:setConfig', (_evt, patch: unknown) => {
   // deliberately do NOT auto-(re)start here — the user presses Start in Settings
   // to fetch the fresh (ephemeral) tunnel URL.
   const cfg = readConfig();
-  if (!cfg.slackEnabled || !cfg.slackSigningSecret) stopSlackServer();
+  if (!slackConfigured(cfg)) stopSlackServer();
   return { ok: true };
 });
 
@@ -5692,9 +5730,10 @@ app.whenReady().then(() => {
   // failure (offline) is logged, not fatal. The tunnel URL is ephemeral and
   // changes per restart, so the user re-pastes it via Settings → Start.
   const slackCfg = readConfig();
-  if (slackCfg.slackEnabled && slackCfg.slackSigningSecret) {
+  if (slackConfigured(slackCfg)) {
     void startSlackServer().then((r) => {
       if (!r.ok) console.error('[slack] auto-start failed:', r.error);
+      else if (slackCfg.slackMode === 'socket') console.log('[slack] socket mode link opening');
       else console.log('[slack] webhook listening', r.url ? `(tunnel: ${r.url})` : '(no tunnel)');
     });
   }

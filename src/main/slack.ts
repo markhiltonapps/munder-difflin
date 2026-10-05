@@ -111,16 +111,20 @@ const TUNNEL_START_TIMEOUT_MS = 10_000;
 /** Socket inactivity timeout for Slack API calls (matches fetchText.ts's 12s). */
 const SLACK_API_TIMEOUT_MS = 12_000;
 
-export class SlackWebhookServer {
-  private server: Server | null = null;
-  private tunnelUrl: string | null = null;
-  private readonly port: number;
-  private readonly signingSecret: string;
-  private readonly channelId?: string;
-  private readonly onMessage: (m: SlackInboundMessage) => void | Promise<void>;
+/**
+ * What to do with a Slack event once it has been authenticated — shared by the
+ * two transports. The Events-API HTTP server (signed POSTs through a tunnel)
+ * and the Socket Mode client (a WebSocket the app opens outward) both deliver
+ * the same `event_callback` payloads; this is the one place that decides which
+ * of them are for us (an @-mention, or a reply in a thread we are already in),
+ * dedupes the double delivery of a mention, and hands the message on.
+ */
+export class SlackEventRouter {
   /** Bot's own Slack user id — learned from `authorizations[].user_id` on the
    *  first event_callback. Used to detect <@BOTID> text mentions. */
   private botUserId: string | null = null;
+  private readonly channelId?: string;
+  private readonly onMessage: (m: SlackInboundMessage) => void | Promise<void>;
   /** Thread roots where the bot was @-mentioned; subsequent replies in these
    *  threads also trigger onMessage. Bounded FIFO to prevent unbounded growth. */
   private readonly activatedThreads: _IActivatedThreads = new _ActivatedThreads();
@@ -130,11 +134,51 @@ export class SlackWebhookServer {
    *  sends both for one @-mention), and absorbs Slack's retry of un-acked events. */
   private readonly seenEvents: _ISeenEvents = new _SeenEvents();
 
+  constructor(opts: { channelId?: string; onMessage: (m: SlackInboundMessage) => void | Promise<void> }) {
+    this.channelId = opts.channelId?.trim() || undefined;
+    this.onMessage = opts.onMessage;
+  }
+
+  /** Route one authenticated Events-API payload. Only @-mentions or replies in
+   *  activated threads trigger — not every plain channel message. Returns true
+   *  when a message was handed on. */
+  handleEventCallback(payload: SlackPayload): boolean {
+    if (payload.type !== 'event_callback' || !payload.event) return false;
+    const authUserId = payload.authorizations?.[0]?.user_id;
+    if (authUserId && !this.botUserId) this.botUserId = authUserId;
+
+    const ev = payload.event;
+    const { trigger, text: rawText, files: rawFiles } = _shouldTrigger(
+      ev, this.botUserId, this.channelId, this.activatedThreads
+    );
+    if (!trigger) return false;
+    const text = stripLeadingMention(rawText);
+    const channel = typeof ev.channel === 'string' ? ev.channel : '';
+    const ts = typeof ev.ts === 'string' ? ev.ts : '';
+    const thread_ts = (typeof ev.thread_ts === 'string' && ev.thread_ts) || ts;
+    // Fire when text is non-empty OR files are attached (file_share may have no caption).
+    if (!((text || rawFiles.length > 0) && channel && ts)) return false;
+    // Dedup gated AFTER the mention/thread filter, so non-triggering messages are unaffected.
+    const dupKey = _dedupKey(ev);
+    if (dupKey && this.seenEvents.seen(dupKey)) return false;
+    const msg: SlackInboundMessage = { text, channel, ts, thread_ts };
+    if (rawFiles.length > 0) msg._rawFiles = rawFiles;
+    try { void this.onMessage(msg); } catch { /* delivery is best-effort */ }
+    return true;
+  }
+}
+
+export class SlackWebhookServer {
+  private server: Server | null = null;
+  private tunnelUrl: string | null = null;
+  private readonly port: number;
+  private readonly signingSecret: string;
+  private readonly router: SlackEventRouter;
+
   constructor(opts: SlackWebhookServerOptions) {
     this.port = opts.port;
     this.signingSecret = opts.signingSecret;
-    this.channelId = opts.channelId?.trim() || undefined;
-    this.onMessage = opts.onMessage;
+    this.router = new SlackEventRouter({ channelId: opts.channelId, onMessage: opts.onMessage });
   }
 
   /**
@@ -241,40 +285,8 @@ export class SlackWebhookServer {
       return;
     }
 
-    // 3) Real events: only @-mentions or replies in activated threads — not every
-    //    plain channel message. Cache the bot user id from authorizations so we
-    //    can detect text mentions (<@BOTID>) without an extra API scope.
-    if (payload.type === 'event_callback' && payload.event) {
-      // Learn the bot's own user id on first sighting (present on every event_callback).
-      const authUserId = payload.authorizations?.[0]?.user_id;
-      if (authUserId && !this.botUserId) this.botUserId = authUserId;
-
-      const ev = payload.event;
-      const { trigger, text: rawText, files: rawFiles } = _shouldTrigger(
-        ev, this.botUserId, this.channelId, this.activatedThreads
-      );
-      if (trigger) {
-        const text = stripLeadingMention(rawText);
-        const channel = typeof ev.channel === 'string' ? ev.channel : '';
-        const ts = typeof ev.ts === 'string' ? ev.ts : '';
-        const thread_ts = (typeof ev.thread_ts === 'string' && ev.thread_ts) || ts;
-        // Fire when text is non-empty OR files are attached (file_share may have no caption).
-        if ((text || rawFiles.length > 0) && channel && ts) {
-          // Dedup: only ONE onMessage (and thus one ack) per logical message. When
-          // the app subscribes to both `app_mention` and `message.*`, a single
-          // @-mention arrives as TWO event_callbacks that share channel:ts; this
-          // also absorbs Slack's retry of an un-acked event. Gated AFTER the
-          // mention/thread filter, so non-triggering messages are unaffected.
-          const dupKey = _dedupKey(ev);
-          const isDuplicate = dupKey ? this.seenEvents.seen(dupKey) : false;
-          if (!isDuplicate) {
-            const msg: SlackInboundMessage = { text, channel, ts, thread_ts };
-            if (rawFiles.length > 0) msg._rawFiles = rawFiles;
-            try { void this.onMessage(msg); } catch { /* delivery is best-effort */ }
-          }
-        }
-      }
-    }
+    // 3) Real events: the router decides what is for us (see SlackEventRouter).
+    this.router.handleEventCallback(payload);
 
     // Always 200 so Slack treats the event as delivered and doesn't retry.
     res.writeHead(200); res.end();
@@ -308,7 +320,7 @@ export class SlackWebhookServer {
 }
 
 /** Minimal shape of the Slack Events API payloads we handle. */
-interface SlackPayload {
+export interface SlackPayload {
   type?: string;
   challenge?: string;
   /** Present on event_callback — contains the bot's own user_id so we can

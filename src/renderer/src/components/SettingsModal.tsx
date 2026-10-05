@@ -103,20 +103,25 @@ const SLACK_CONNECT_STEPS = `Connect Munder Difflin to Slack
      groups:history      (read private-channel messages)
    Install to workspace, then copy the Bot User OAuth Token
    (xoxb-...) into the "Bot token" field here.
-4. Press Start (below) to launch the webhook and get your
-   Request URL.
-5. Event Subscriptions -> Enable Events -> Request URL: paste the
-   Request URL from here and wait for Slack's green check (Verified).
+4. SOCKET MODE (recommended; nothing to re-paste after a restart):
+   Settings -> Socket Mode -> Enable. Then Basic Information ->
+   App-Level Tokens -> Generate Token and Scopes: name it anything,
+   add the scope connections:write, Generate, and copy the xapp-...
+   token into the "App-level token" field here. Skip step 5.
+5. REQUEST URL (the older way; the URL changes every restart):
+   press Start here, then Event Subscriptions -> Enable Events ->
+   Request URL: paste the URL from here and wait for Verified.
 6. Event Subscriptions -> "Subscribe to bot events": add
      message.channels
      message.groups
+   (Socket Mode delivers these over the socket; no URL needed.)
 7. Event Subscriptions -> "Subscribe to events on behalf of users"
    (add the matching User Token Scope channels:history / groups:history
    first if Slack asks): add
      message.channels
      message.groups
-8. Save Changes, reinstall if Slack prompts, then invite the bot
-   to your channel:  /invite @MunderDifflin`;
+8. Save Changes, reinstall if Slack prompts, invite the bot to your
+   channel (/invite @MunderDifflin), then press Start here.`;
 
 /** The request/response contract shown behind the webhook i icon. Every webhook
  *  shares one server and one tunnel and is told apart by its id in the path, so
@@ -399,6 +404,12 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   // App/voice-initiated proactive posting (the "queued" ack). Default OFF —
   // the Slack-origin done-reply round-trip is unaffected by this toggle.
   const [slackProactivePosting, setSlackProactivePosting] = useState(config.slackProactivePosting ?? false);
+  // How Slack reaches us: Socket Mode (outbound WebSocket, nothing to paste) or
+  // the Events API through a tunnel whose URL rotates per launch. New setups
+  // are steered to socket; an existing webhook setup keeps what it has.
+  const [slackMode, setSlackMode] = useState<'webhook' | 'socket'>(config.slackMode ?? (config.slackSigningSecret ? 'webhook' : 'socket'));
+  const [slackAppToken, setSlackAppToken] = useState(config.slackAppToken ?? '');
+  const [socketStatus, setSocketStatus] = useState<{ connected: boolean; error?: string; attempts: number } | null>(null);
   const [tunnelUrl, setTunnelUrl] = useState('');
   const [slackBusy, setSlackBusy] = useState(false);
   const [slackNote, setSlackNote] = useState('');
@@ -558,6 +569,8 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
       setSlackChannel(cc.slackChannelId ?? '');
       setSlackPort(String(cc.slackPort ?? 3847));
       setSlackProactivePosting(cc.slackProactivePosting ?? false);
+      setSlackMode(cc.slackMode ?? (cc.slackSigningSecret ? 'webhook' : 'socket'));
+      setSlackAppToken(cc.slackAppToken ?? '');
       const kgOn = (cc as { knowledgeGraph?: { enabled?: boolean } }).knowledgeGraph?.enabled === true;
       setKgEnabled(kgOn);
       setFreeflowEnabled(cc.freeflowEnabled !== false);
@@ -575,7 +588,9 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
       if (!alive) return;
       setRunning(s.running);
       if (s.url) setTunnelUrl(s.url);
+      if (s.socket) setSocketStatus(s.socket);
     }).catch(() => { /* status unavailable - assume not running */ });
+    const unsubSocket = window.cth.onSlackSocketStatus?.((s) => { if (alive) setSocketStatus(s); }) ?? (() => {});
     // Triggers: re-read main and push the result into the shared mirror. App
     // already seeded it at launch; this catches anything the Triggers tab (or
     // another window) changed since, and is the ONLY place Settings reads them —
@@ -596,7 +611,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
         if (s.url) setWebhookUrl(s.url);
       } catch { /* status unavailable - assume not listening */ }
     })();
-    return () => { alive = false; };
+    return () => { alive = false; unsubSocket(); };
   }, []);
 
   /** Persist the current Slack inputs. Returns the resolved config patch. */
@@ -606,8 +621,11 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     channelId: slackChannel,
     port: Number(slackPort) || 3847,
     enabled,
-    proactivePosting: slackProactivePosting
+    proactivePosting: slackProactivePosting,
+    mode: slackMode,
+    appToken: slackAppToken
   });
+  const slackCanStart = slackMode === 'socket' ? !!slackAppToken.trim() : !!slackSecret.trim();
 
   const saveSlack = async () => {
     setSlackBusy(true); setSlackNote('');
@@ -630,7 +648,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
         setRunning(true);
         // Keep the last URL if this start returned none (tunnel hiccup) - don't blank it.
         if (res.url) setTunnelUrl(res.url);
-        setSlackNote(res.url ? 'listening' : (res.error ?? 'started, but tunnel unavailable'));
+        setSlackNote(slackMode === 'socket' ? t('settings.connections.socketConnecting') : res.url ? 'listening' : (res.error ?? 'started, but tunnel unavailable'));
       } else {
         setSlackNote(res.error ?? 'failed to start');
       }
@@ -1507,7 +1525,13 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                               fontSize: 12, lineHeight: '16px',
                               color: running ? 'var(--cth-mint-700, #1f7a4d)' : 'var(--cth-ink-500)'
                             }}>
-                              {running ? t('settings.connections.connected') : t('settings.connections.notConnected')}
+                              {running
+                                ? (slackMode === 'socket'
+                                    ? (socketStatus?.connected ? t('settings.connections.connected')
+                                        : socketStatus?.error ? t('settings.connections.socketDropped', { error: socketStatus.error })
+                                          : t('settings.connections.socketConnecting'))
+                                    : t('settings.connections.connected'))
+                                : t('settings.connections.notConnected')}
                             </span>
                             <PixelButton
                               variant={slackEnabled ? 'primary' : 'secondary'}
@@ -1533,8 +1557,33 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
 
                         {slackEnabled && (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            {/* Transport. Socket Mode first: it is the one that keeps working. */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              <span style={slackLabelStyle}>{t('settings.connections.slackMode', { godName })}</span>
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                <PixelButton variant={slackMode === 'socket' ? 'primary' : 'secondary'} size="sm" onClick={() => setSlackMode('socket')}>
+                                  {t('settings.connections.slackModeSocket')}
+                                </PixelButton>
+                                <PixelButton variant={slackMode === 'webhook' ? 'primary' : 'secondary'} size="sm" onClick={() => setSlackMode('webhook')}>
+                                  {t('settings.connections.slackModeWebhook')}
+                                </PixelButton>
+                              </div>
+                            </div>
+                            {slackMode === 'socket' && (
+                              <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                <span style={slackLabelStyle}>{t('settings.connections.appToken')}</span>
+                                <input
+                                  type="password"
+                                  value={slackAppToken}
+                                  onChange={(e) => setSlackAppToken(e.target.value)}
+                                  placeholder={t('settings.connections.appTokenPlaceholder')}
+                                  style={{ ...slackInputStyle, fontFamily: 'var(--cth-font-mono)' }}
+                                />
+                              </label>
+                            )}
                             {/* Signing secret + bot token side-by-side in the wider layout */}
                             <div style={{ display: 'flex', gap: 16 }}>
+                              {slackMode === 'webhook' && (
                               <label style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
                                 <span style={slackLabelStyle}>{t('settings.connections.signingSecret')}</span>
                                 <input
@@ -1545,6 +1594,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                                   style={{ ...slackInputStyle, fontFamily: 'var(--cth-font-mono)' }}
                                 />
                               </label>
+                              )}
                               {/* Bot token: stays in main; never leaves the main process. */}
                               <label style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
                                 <span style={slackLabelStyle}>{t('settings.connections.botToken')}</span>
@@ -1599,7 +1649,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
 
                             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                               {/* Start disabled once connected; Stop only when running. */}
-                              <PixelButton variant="primary" size="sm" onClick={startSlack} disabled={slackBusy || !slackSecret.trim() || running}>
+                              <PixelButton variant="primary" size="sm" onClick={startSlack} disabled={slackBusy || !slackCanStart || running}>
                                 {slackBusy ? '...' : running ? t('settings.connections.connectedBtn') : t('settings.connections.start')}
                               </PixelButton>
                               <PixelButton variant="secondary" size="sm" onClick={stopSlack} disabled={slackBusy || !running}>
@@ -1616,7 +1666,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                             {/* Keep the Request URL visible while connected even after a
                                 modal reopen; when stopped, show the last URL greyed
                                 since Slack reuses it until the next Start. */}
-                            {(running || tunnelUrl) && (
+                            {slackMode === 'webhook' && (running || tunnelUrl) && (
                               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, opacity: running ? 1 : 0.55 }}>
                                 <span style={slackLabelStyle}>
                                   {running
@@ -1636,7 +1686,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                             )}
 
                             <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
-                              {t('settings.connections.slackHint')}
+                              {slackMode === 'socket' ? t('settings.connections.socketHint') : t('settings.connections.slackHint')}
                             </span>
                           </div>
                         )}

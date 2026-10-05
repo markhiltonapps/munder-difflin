@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Slack Socket Mode.** Settings → Connections → Slack gains a transport choice. **Socket Mode**
+  opens a connection from your computer out to Slack with an app-level token, so there is no
+  Request URL to paste and nothing breaks when the app restarts: the link reconnects by itself
+  (backing off from one second to thirty) and reports its state live in Settings. The old way,
+  the Events API through a tunnel whose URL changed on every launch, stays available as
+  **Request URL**. Both transports feed one router, so what counts as a message for Michael (an
+  @-mention, or a reply in a thread he is already in) and the de-duplication of Slack's double
+  delivery are the same whichever you use. New setups default to Socket Mode; an existing
+  Request URL setup keeps what it has until you switch.
 - **Move to another computer.** Settings → General gets **export office** and **import office**.
   Export packs the office — every agent, their memory, inboxes, tasks, notes, meetings, screenshots
   and your settings — into one `.tar.gz`. Import on the other machine reads the file, shows every
