@@ -4666,6 +4666,14 @@ const payrollService = new PayrollService(() => { const r = hive.root(); return 
 setPriceOverrides(readConfig().modelPriceOverrides);
 ipcMain.handle('payroll:summary', () => payrollService.summary());
 ipcMain.handle('showcase:markSeen', (_evt, rel: unknown) => ({ ok: typeof rel === 'string' && showcase().markSeen(rel) }));
+ipcMain.handle('showcase:move', (_evt, rel: unknown, project: unknown) => {
+  if (typeof rel !== 'string' || !(project === null || typeof project === 'string')) return { ok: false, error: 'bad request' };
+  return showcase().move(rel, project);
+});
+ipcMain.handle('showcase:archive', (_evt, rel: unknown, archived: unknown) => {
+  if (typeof rel !== 'string' || typeof archived !== 'boolean') return { ok: false, error: 'bad request' };
+  return showcase().setArchived(rel, archived);
+});
 /** Open a deliverable in the default app (a page in the browser, a PDF in the
  *  reader). Only files the gallery lists, or ones the terminal verified as a
  *  deliverable kind, so this is never a way to launch something else. */

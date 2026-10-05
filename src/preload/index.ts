@@ -1435,6 +1435,12 @@ const api = {
   showcaseList: (): Promise<{ root: string; items: import('../shared/showcase').ShowcaseItem[] }> =>
     ipcRenderer.invoke('showcase:list'),
   showcaseMarkSeen: (rel: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('showcase:markSeen', rel),
+  /** File an item under <agent>/<project>/ (null = unsorted). A page's relative assets move with it. */
+  showcaseMove: (rel: string, project: string | null): Promise<{ ok: true; rel: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('showcase:move', rel, project),
+  /** Put an item away under .archive/ (or bring it back). */
+  showcaseArchive: (rel: string, archived: boolean): Promise<{ ok: true; rel: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('showcase:archive', rel, archived),
   showcaseOpen: (abs: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('showcase:open', abs),
   /** Payroll: per-agent tokens and cost by window, folded from the cost ledger. */
   payrollSummary: (): Promise<import('../shared/payroll').PayrollSummary> => ipcRenderer.invoke('payroll:summary'),

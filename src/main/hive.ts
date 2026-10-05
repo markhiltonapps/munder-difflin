@@ -1601,7 +1601,7 @@ export class HiveManager {
       `2. Record durable facts, decisions, and context by appending to ${inDir('memory.md')}.`,
       `3. To ask another agent for something or share information, write ONE message JSON into ${inDir('outbox')} (schema in PROTOCOL.md). NEVER write into another agent's folder — the orchestrator delivers your outbox.`,
       '4. At the END of a task, append what you learned to memory.md so future-you remembers.',
-      `5. Anything made FOR THE HUMAN TO LOOK AT — a social post as an .html page, an image, a PDF, a markdown report — goes in ${inRoot('showcase', meta.id)} (create it if missing). It appears in their Showcase in the app the moment the file is written, rendered as-is, so never make them copy a path into a browser. One file per deliverable; keep its assets (images, css) in the same folder and reference them relatively. Then mention it in your message or card in ONE line: what it is and the file name.`,
+      `5. Anything made FOR THE HUMAN TO LOOK AT — a social post as an .html page, an image, a PDF, a markdown report — goes in ${inRoot('showcase', meta.id)}/<project>/ where <project> is a short lower-case name for the product or initiative it belongs to (e.g. neato-glasses, webinar-launch; reuse an existing folder name when one fits). Create folders as needed. It appears in their Showcase in the app the moment the file is written, rendered as-is, grouped by employee or by project at their choice, so never make them copy a path into a browser. One file per deliverable; keep its assets (images, css) in the same folder and reference them relatively. Then mention it in your message or card in ONE line: what it is and the file name.`,
       guardrailsLine,
       memoryLine,
       knowledgeLine,
@@ -3035,8 +3035,11 @@ and never sit idle waiting for a reply — move on to other work and pick the an
 
 ## Handing work to the human (the Showcase)
 Anything made for the human to LOOK AT — a social post as an \`.html\` page, an image, a PDF, a
-markdown report — goes in \`showcase/<your-id>/\` in the hive root (create the folder if it is
-missing). The app watches that folder: the file appears in the human's Showcase the moment it is
+markdown report — goes in \`showcase/<your-id>/<project>/\` in the hive root, where \`<project>\`
+is a short lower-case name for the product or initiative it belongs to (\`neato-glasses\`,
+\`webinar-launch\`; reuse an existing folder when one fits). Create folders as needed. The human
+can view the shelf grouped by employee or by project, so the project folder is what keeps a
+launch's work together across agents. The app watches that folder: the file appears in the human's Showcase the moment it is
 written, rendered as-is, with a badge until they open it. Never make them copy a path into a
 browser. One file per deliverable; put its assets (images, css) in the same folder and reference
 them relatively; pages are shown without scripts, so keep them static. Then say in ONE line, in

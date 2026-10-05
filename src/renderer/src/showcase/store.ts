@@ -116,4 +116,25 @@ function focusTab(): void {
   }).catch(() => { /* store unavailable */ });
 }
 
-export const showcase = { refresh, openItem, openAbs, closeViewer };
+/** File an item under a project (null = unsorted). Keeps the viewer on it if open. */
+export async function moveItem(rel: string, project: string | null): Promise<{ ok: boolean; error?: string }> {
+  const r = await window.cth.showcaseMove?.(rel, project);
+  if (!r) return { ok: false, error: 'unavailable' };
+  if (r.ok && state.viewing?.rel === rel) {
+    const item = state.items.find((i) => i.rel === rel);
+    if (item) emit({ viewing: { ...state.viewing, rel: r.rel, abs: item.abs.slice(0, item.abs.length - item.rel.length) + r.rel } });
+  }
+  await refresh();
+  return r.ok ? { ok: true } : { ok: false, error: r.error };
+}
+
+/** Put away (Done) or bring back. Closes the viewer when the shown item is archived. */
+export async function setArchived(rel: string, archived: boolean): Promise<{ ok: boolean; error?: string }> {
+  const r = await window.cth.showcaseArchive?.(rel, archived);
+  if (!r) return { ok: false, error: 'unavailable' };
+  if (r.ok && state.viewing?.rel === rel) emit({ viewing: null });
+  await refresh();
+  return r.ok ? { ok: true } : { ok: false, error: r.error };
+}
+
+export const showcase = { refresh, openItem, openAbs, closeViewer, moveItem, setArchived };

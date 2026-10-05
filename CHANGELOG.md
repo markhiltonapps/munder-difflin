@@ -32,6 +32,14 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Showcase projects, views and a Done shelf.** Deliverables now live as
+  `showcase/<agent>/<project>/`, and agents are told to file their work under a short project
+  name. The shelf groups by employee, project, date or type (remembered), has a search box, and
+  shows a count and a new-items badge per section. "Move to" files an item under an existing or
+  new project; drag a card onto a project section does the same; Ctrl+click selects several. The
+  file really moves, and a page's pictures and styles move with it. "Done" puts an item away
+  under an archive folder where it stays searchable behind the done filter, so the shelf only
+  shows what still needs your eyes.
 - **Stapler: pick your microphone beside Record, and no headphones needed.** The Stapler tab now
   shows a microphone chooser next to Record, and a line naming the output device Windows is
   capturing as the other side, with a link to Windows sound settings to change it. Without

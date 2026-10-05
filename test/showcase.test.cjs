@@ -87,6 +87,9 @@ test('the listing finds deliverables by agent folder, newest first, and skips as
   const root = tmpRoot();
   const items = main.listDeliverables(root, {});
   assert.deepEqual(items.map((i) => i.rel).sort(), ['erin-1/post.html', 'notes.md', 'pam-2/hero.png']);
+  // A picture a page references is folded into the page, not listed twice.
+  fs.writeFileSync(path.join(root, 'pam-2', 'post.html'), '<img src="hero.png">');
+  assert.deepEqual(main.listDeliverables(root, {}).map((i) => i.rel).sort(), ['erin-1/post.html', 'notes.md', 'pam-2/post.html']);
   const post = items.find((i) => i.rel === 'erin-1/post.html');
   assert.equal(post.agent, 'erin-1');
   assert.equal(post.kind, 'page');
@@ -161,4 +164,85 @@ test('an IDE open-file request matches its workspace whatever separator the path
   const ide = read('src/renderer/src/ide/IdePanel.tsx');
   assert.match(ide, /const abs = queued\.replace\(\/\\\\\/g, '\/'\);/);
   assert.match(ide, /const rootSlash = root\.replace\(\/\\\\\/g, '\/'\);/);
+});
+
+// --- projects, archive, grouping ----------------------------------------------
+
+test('the second folder is the project; archived items keep their place under .archive', () => {
+  const root = tmpRoot();
+  fs.mkdirSync(path.join(root, 'erin-1', 'neato-glasses'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'erin-1', 'neato-glasses', 'launch.html'), '<p>x</p>');
+  fs.mkdirSync(path.join(root, '.archive', 'pam-2', 'webinar'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.archive', 'pam-2', 'webinar', 'old.png'), 'png');
+  const items = main.listDeliverables(root, {});
+  const launch = items.find((i) => i.rel === 'erin-1/neato-glasses/launch.html');
+  assert.deepEqual([launch.agent, launch.project, launch.archived], ['erin-1', 'neato-glasses', false]);
+  const post = items.find((i) => i.rel === 'erin-1/post.html');
+  assert.deepEqual([post.agent, post.project], ['erin-1', null], 'straight under the agent = unsorted');
+  const old = items.find((i) => i.rel === '.archive/pam-2/webinar/old.png');
+  assert.deepEqual([old.agent, old.project, old.archived, old.unseen], ['pam-2', 'webinar', true, false], 'archived is never "new"');
+});
+
+test('move files an item under a project, carries a page\'s assets and its seen mark; archive puts it away and back', () => {
+  const root = tmpRoot();
+  fs.writeFileSync(path.join(root, 'erin-1', 'post.html'), '<img src="hero.png"><link href="css/style.css"><a href="https://x.y/z">z</a>');
+  fs.writeFileSync(path.join(root, 'erin-1', 'hero.png'), 'png');
+  fs.mkdirSync(path.join(root, 'erin-1', 'css'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'erin-1', 'css', 'style.css'), 'b{}');
+  const store = new main.ShowcaseStore(root);
+  store.markSeen('erin-1/post.html');
+  const moved = store.move('erin-1/post.html', 'Neato Glasses');
+  assert.deepEqual(moved, { ok: true, rel: 'erin-1/neato-glasses/post.html' });
+  assert.ok(fs.existsSync(path.join(root, 'erin-1', 'neato-glasses', 'post.html')));
+  assert.ok(fs.existsSync(path.join(root, 'erin-1', 'neato-glasses', 'hero.png')), 'the picture travels');
+  assert.ok(fs.existsSync(path.join(root, 'erin-1', 'neato-glasses', 'css', 'style.css')), 'so does the stylesheet');
+  assert.ok(!fs.existsSync(path.join(root, 'erin-1', 'hero.png')));
+  assert.equal(store.list().find((i) => i.rel === 'erin-1/neato-glasses/post.html').unseen, false, 'seen mark followed the file');
+  // Back to unsorted, then away and back.
+  assert.deepEqual(store.move('erin-1/neato-glasses/post.html', null), { ok: true, rel: 'erin-1/post.html' });
+  const away = store.setArchived('erin-1/post.html', true);
+  assert.deepEqual(away, { ok: true, rel: '.archive/erin-1/post.html' });
+  assert.ok(fs.existsSync(path.join(root, '.archive', 'erin-1', 'post.html')));
+  assert.equal(store.unseenCount(), 2, 'archived items do not count as new');
+  assert.deepEqual(store.setArchived('.archive/erin-1/post.html', false), { ok: true, rel: 'erin-1/post.html' });
+  // Guards.
+  assert.equal(store.move('notes.md', 'x').ok, false, 'a root item has no agent folder');
+  assert.equal(store.move('erin-1/post.html', '   ').ok, false, 'a blank project name is refused');
+  assert.deepEqual(store.move('erin-1/post.html', '../../etc'), { ok: true, rel: 'erin-1/etc/post.html' }, 'dots and slashes are stripped, never walked');
+});
+
+test('page assets are the relative references only', () => {
+  assert.deepEqual(main.pageAssets('<img src="a.png"><img src="./b/c.jpg"><link href="s.css"><a href="https://x/y"><div style="background:url(img/bg.png)"><img src="../up.png"><a href="#top">').sort(),
+    ['a.png', 'b/c.jpg', 'img/bg.png', 's.css']);
+});
+
+test('grouping and search are what the shelf shows', () => {
+  const now = Date.parse('2026-10-05T15:00:00');
+  const mk = (rel, mtimeMs, kind = 'page') => ({ rel, abs: '/s/' + rel, name: rel.split('/').pop(), kind, agent: rel.split('/')[0], project: rel.split('/').length > 2 ? rel.split('/')[1] : null, mtimeMs, size: 1, unseen: true, archived: false });
+  const items = [mk('erin/neato/a.html', now - 1000), mk('pam/neato/b.png', now - 3 * 86_400_000, 'image'), mk('pam/c.html', now - 40 * 86_400_000)];
+  const byProject = shared.groupItems(items, 'project', now);
+  assert.deepEqual(byProject.map((g) => [g.key, g.items.length]), [['neato', 2], ['', 1]], 'unsorted last');
+  assert.deepEqual(shared.groupItems(items, 'employee', now).map((g) => g.key), ['erin', 'pam']);
+  assert.deepEqual(shared.groupItems(items, 'date', now).map((g) => g.key), ['today', 'week', 'older']);
+  assert.deepEqual(shared.groupItems(items, 'type', now).map((g) => g.key), ['page', 'image']);
+  assert.equal(shared.groupItems(items, 'project', now)[0].unseen, 2);
+  assert.ok(shared.matchesSearch(items[1], 'NEATO'));
+  assert.ok(shared.matchesSearch(items[1], 'pam'));
+  assert.ok(!shared.matchesSearch(items[1], 'webinar'));
+  assert.equal(shared.slugProject('  Neato Glasses / Launch! '), 'neato-glasses-launch');
+  assert.equal(shared.slugProject('///'), null);
+});
+
+test('the shelf has group-by, search, done and move wired, and agents are told about project folders', () => {
+  const tab = read('src/renderer/src/components/ShowcaseTab.tsx');
+  assert.match(tab, /groupItems\(visible, groupBy\)/);
+  assert.match(tab, /matchesSearch\(i, query\)/);
+  assert.match(tab, /showcase\.setArchived\(/);
+  assert.match(tab, /showcase\.moveItem\(/);
+  assert.match(tab, /onDrop=\{groupBy === 'project' \? \(e\) => onDropOnGroup\(e, g\.key\)/);
+  assert.match(read('src/main/index.ts'), /ipcMain\.handle\('showcase:move'/);
+  assert.match(read('src/main/index.ts'), /ipcMain\.handle\('showcase:archive'/);
+  const hive = read('src/main/hive.ts');
+  assert.match(hive, /showcase\/<your-id>\/<project>\//);
+  assert.match(hive, /\$\{inRoot\('showcase', meta\.id\)\}\/<project>\//);
 });

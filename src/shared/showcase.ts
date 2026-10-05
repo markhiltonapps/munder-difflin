@@ -22,6 +22,10 @@ export interface ShowcaseItem {
   kind: ShowcaseKind;
   /** First folder under the root, which the protocol asks agents to make their id. */
   agent: string | null;
+  /** Second folder, the project the deliverable belongs to; null = unsorted. */
+  project: string | null;
+  /** Reviewed and put away under .archive/. Hidden from the shelf by default. */
+  archived: boolean;
   mtimeMs: number;
   size: number;
   /** Not opened since it last changed. */
@@ -34,6 +38,61 @@ const KIND_BY_EXT: Record<string, ShowcaseKind> = {
   pdf: 'pdf',
   md: 'markdown', markdown: 'markdown'
 };
+
+export type ShowcaseGroupBy = 'employee' | 'project' | 'date' | 'type';
+export const SHOWCASE_GROUP_MODES: ShowcaseGroupBy[] = ['employee', 'project', 'date', 'type'];
+
+/** The folder archived deliverables move into (mirrors the live tree). */
+export const ARCHIVE_DIR = '.archive';
+
+/** A project folder name an agent or the owner may use: plain words, no path tricks. */
+export function slugProject(name: string): string | null {
+  const s = name.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+  return s || null;
+}
+
+export interface ShowcaseGroup { key: string; label: string; items: ShowcaseItem[]; unseen: number }
+
+/** Group a list for the shelf. Labels for employee/project are raw keys; the
+ *  renderer maps agent ids to names and translates the date/type buckets. */
+export function groupItems(items: ShowcaseItem[], mode: ShowcaseGroupBy, now: number = Date.now()): ShowcaseGroup[] {
+  const buckets = new Map<string, ShowcaseItem[]>();
+  const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0);
+  const keyOf = (i: ShowcaseItem): string => {
+    switch (mode) {
+      case 'employee': return i.agent ?? '';
+      case 'project': return i.project ?? '';
+      case 'type': return i.kind;
+      case 'date': {
+        if (i.mtimeMs >= dayStart.getTime()) return 'today';
+        if (i.mtimeMs >= dayStart.getTime() - 6 * 86_400_000) return 'week';
+        if (i.mtimeMs >= dayStart.getTime() - 29 * 86_400_000) return 'month';
+        return 'older';
+      }
+    }
+  };
+  for (const i of items) {
+    const k = keyOf(i);
+    const b = buckets.get(k); if (b) b.push(i); else buckets.set(k, [i]);
+  }
+  const order = mode === 'date' ? ['today', 'week', 'month', 'older'] : mode === 'type' ? ['page', 'image', 'pdf', 'markdown'] : null;
+  const keys = [...buckets.keys()].sort((a, b) => {
+    if (order) return order.indexOf(a) - order.indexOf(b);
+    if (a === '') return 1; if (b === '') return -1; // unsorted / no agent last
+    return a.localeCompare(b);
+  });
+  return keys.map((key) => {
+    const list = buckets.get(key)!;
+    return { key, label: key, items: list, unseen: list.filter((i) => i.unseen).length };
+  });
+}
+
+/** Case-insensitive match on name, agent and project. */
+export function matchesSearch(i: ShowcaseItem, q: string): boolean {
+  const s = q.trim().toLowerCase();
+  if (!s) return true;
+  return [i.name, i.agent ?? '', i.project ?? '', i.rel].some((v) => v.toLowerCase().includes(s));
+}
 
 export function extOf(p: string): string {
   const m = /\.([a-z0-9]+)$/i.exec(p);
