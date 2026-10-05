@@ -1601,6 +1601,7 @@ export class HiveManager {
       `2. Record durable facts, decisions, and context by appending to ${inDir('memory.md')}.`,
       `3. To ask another agent for something or share information, write ONE message JSON into ${inDir('outbox')} (schema in PROTOCOL.md). NEVER write into another agent's folder — the orchestrator delivers your outbox.`,
       '4. At the END of a task, append what you learned to memory.md so future-you remembers.',
+      `5. Anything made FOR THE HUMAN TO LOOK AT — a social post as an .html page, an image, a PDF, a markdown report — goes in ${inRoot('showcase', meta.id)} (create it if missing). It appears in their Showcase in the app the moment the file is written, rendered as-is, so never make them copy a path into a browser. One file per deliverable; keep its assets (images, css) in the same folder and reference them relatively. Then mention it in your message or card in ONE line: what it is and the file name.`,
       guardrailsLine,
       memoryLine,
       knowledgeLine,
@@ -3031,6 +3032,15 @@ options (roughly 700 characters) is a report, not a question. Cut the narrative 
 When the ask originates in another agent's report, REWRITE it into that shape. Never paste the report
 body in as the question, and never make the human read the investigation to find the decision. Do NOT park human questions in separate files (no \`HumanQuestion.md\`),
 and never sit idle waiting for a reply — move on to other work and pick the answer up when it arrives.
+
+## Handing work to the human (the Showcase)
+Anything made for the human to LOOK AT — a social post as an \`.html\` page, an image, a PDF, a
+markdown report — goes in \`showcase/<your-id>/\` in the hive root (create the folder if it is
+missing). The app watches that folder: the file appears in the human's Showcase the moment it is
+written, rendered as-is, with a badge until they open it. Never make them copy a path into a
+browser. One file per deliverable; put its assets (images, css) in the same folder and reference
+them relatively; pages are shown without scripts, so keep them static. Then say in ONE line, in
+your message or on the card, what it is and the file name.
 
 ## Guardrails: circuit breaker & token budgets
 A circuit breaker watches every agent for runaway behavior (looping on the same tool, error storms,

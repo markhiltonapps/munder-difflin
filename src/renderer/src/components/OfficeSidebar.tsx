@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { PixelBadge } from './PixelBadge';
 import { PixelButton } from './PixelButton';
 import { Icon, type IconName } from './Icon';
+import { useShowcase } from '@/showcase/store';
 import { SpritePortrait } from './SpritePortrait';
 import { useHasTerminalDraft } from './terminalPool';
 import { groupByRepo, useResolvedRepoNames } from './repoGroups';
@@ -39,6 +40,7 @@ import type { HarnessConfig } from '@/store/config';
 
 /** Command Center tabs the rail links to, in rail order. */
 const SURFACES: { key: string; labelKey: string; icon: IconName }[] = [
+  { key: 'showcase', labelKey: 'officeSidebar.showcase',     icon: 'image' },
   { key: 'stapler',  labelKey: 'officeSidebar.stapler',      icon: 'mic' },
   { key: 'tasks',    labelKey: 'officeSidebar.tasks',        icon: 'check' },
   { key: 'human',    labelKey: 'officeSidebar.inbox',        icon: 'bell' },
@@ -74,6 +76,7 @@ export function OfficeSidebar({ config }: OfficeSidebarProps) {
   const god = agents.find(a => a.isGod);
   // A meeting being recorded shows on the Stapler row wherever you are.
   const staplerRecording = useStapler().status === 'recording';
+  const showcaseUnseen = useShowcase().unseen;
 
   // Hive tasks, polled like the floor strip does: the "asked you" chips and
   // the doing-count stickies come from tasks.json, not from the agent record.
@@ -239,7 +242,7 @@ export function OfficeSidebar({ config }: OfficeSidebarProps) {
         }}>
           {SURFACES.map((s) => {
             const lit = surface === s.key && !!god && selectedId === god.id;
-            const count = s.key === 'human' ? totalAsks : 0;
+            const count = s.key === 'human' ? totalAsks : s.key === 'showcase' ? showcaseUnseen : 0;
             return (
               <button
                 key={s.key}
@@ -276,7 +279,7 @@ export function OfficeSidebar({ config }: OfficeSidebarProps) {
                 )}
                 {count > 0 && (
                   <span
-                    title={t('officeSidebar.waitingOnYou', { count })}
+                    title={s.key === 'showcase' ? t('officeSidebar.newWork', { count }) : t('officeSidebar.waitingOnYou', { count })}
                     style={{
                       flexShrink: 0, minWidth: 18, height: 16, padding: '0 5px', boxSizing: 'border-box',
                       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',

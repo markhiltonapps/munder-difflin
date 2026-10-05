@@ -150,8 +150,33 @@
     "layoutToSidebar": "切换到侧栏布局：左侧是任务、收件箱、自动化、记忆和能力，智能体按仓库分组",
     "layoutToClassic": "切换到经典布局：智能体卡片条位于楼层下方",
     "stapler": "订书机",
+    "showcase": "展示架",
+    "newWork": "{{count}} 项新内容待查看",
     "recording": "正在录制会议",
     "rec": "录制中"
+  },
+  "showcase": {
+    "title": "展示架",
+    "unseenCount": "{{count}} 项新内容",
+    "allSeen": "共 {{count}} 项，均已查看",
+    "everyone": "所有人",
+    "refresh": "刷新",
+    "folder": "文件夹",
+    "new": "新 — 尚未打开",
+    "noAgent": "无代理文件夹",
+    "back": "返回",
+    "openOutside": "外部打开",
+    "openOutsideTip": "在浏览器或默认应用中打开——适用于需要脚本的页面",
+    "reveal": "在文件夹中显示",
+    "copyPath": "复制路径",
+    "opened": "已打开",
+    "couldNotOpen": "无法打开",
+    "copied": "已复制路径",
+    "couldNotCopy": "无法复制",
+    "loading": "加载中…",
+    "emptyTitle": "展示架上还没有内容",
+    "emptyBody": "当代理制作了供你查看的内容——网页形式的社交帖子、图片、PDF、Markdown 报告——它会保存到此文件夹，文件写入后立即在这里按原样呈现。代理的简报中已告知它们该位置。",
+    "emptyHint": "已有交付物存放在别处？让 {{godName}} 移进来，或自己把文件放入该文件夹。"
   },
   "stapler": {
     "title": "订书机",
@@ -548,7 +573,8 @@
       "activity": "动态",
       "skills": "技能",
       "workers": "工人",
-      "stapler": "订书机"
+      "stapler": "订书机",
+      "showcase": "展示架"
     },
     "terminalFullscreen": "终端已全屏打开。按 Esc 返回。",
     "noTerminal": "{{name}} 没有实时终端。",

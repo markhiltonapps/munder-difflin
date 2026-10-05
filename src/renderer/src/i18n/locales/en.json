@@ -150,8 +150,33 @@
     "layoutToSidebar": "Switch to the sidebar layout: Tasks, Inbox, Automations, Memory and Capabilities on the left, agents grouped by repository",
     "layoutToClassic": "Switch to the classic layout: the agent strip under the floor",
     "stapler": "Stapler",
+    "showcase": "Showcase",
+    "newWork": "{{count}} new to look at",
     "recording": "A meeting is being recorded",
     "rec": "REC"
+  },
+  "showcase": {
+    "title": "SHOWCASE",
+    "unseenCount": "{{count}} new",
+    "allSeen": "{{count}} items, all seen",
+    "everyone": "everyone",
+    "refresh": "refresh",
+    "folder": "folder",
+    "new": "New — not opened yet",
+    "noAgent": "no agent folder",
+    "back": "back",
+    "openOutside": "open outside",
+    "openOutsideTip": "Open in your browser or default app — for a page that needs its scripts",
+    "reveal": "show in folder",
+    "copyPath": "copy path",
+    "opened": "opened",
+    "couldNotOpen": "could not open",
+    "copied": "path copied",
+    "couldNotCopy": "could not copy",
+    "loading": "loading…",
+    "emptyTitle": "NOTHING ON THE SHELF YET",
+    "emptyBody": "When an agent makes something for you to look at — a social post as a web page, an image, a PDF, a markdown report — it saves it in this folder and it shows up here the moment the file is written, rendered as-is. The agents are told where it is in their briefing.",
+    "emptyHint": "Already have deliverables somewhere else? Ask {{godName}} to move them in, or drop files into the folder yourself."
   },
   "stapler": {
     "title": "STAPLER",
@@ -548,7 +573,8 @@
       "activity": "activity",
       "skills": "skills",
       "workers": "workers",
-      "stapler": "stapler"
+      "stapler": "stapler",
+      "showcase": "showcase"
     },
     "terminalFullscreen": "Terminal is open in fullscreen. Press Esc to bring it back.",
     "noTerminal": "{{name}} has no live terminal.",

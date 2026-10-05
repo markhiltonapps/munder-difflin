@@ -18,6 +18,19 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **The Showcase.** A shelf for the things agents make for you to look at. Agents save a
+  deliverable — a social post as a web page, an image, a PDF, a markdown report — under
+  `showcase/<their id>/` in the hive, and it appears in the new Showcase tab the moment the file
+  is written, drawn as it is meant to be seen: pages render live, pictures show as pictures.
+  Click one and it opens full size inside the app; a mark and a count in the sidebar show what you
+  have not looked at yet. No link to copy, no browser to open. "Open outside" hands a file to your
+  browser for the rare page that needs its scripts, since pages are shown without them. The agents'
+  briefing and PROTOCOL.md tell them where deliverables go.
+- **File paths in a terminal open on a plain click.** A path an agent prints now opens inside the
+  app with one click: pages, pictures and PDFs in the Showcase viewer, everything else in the IDE.
+  Ctrl+click shows the file in your file browser instead. Paths agents write relative to the hive
+  (`agents/<id>/work/plan.md`) now resolve, where before they silently missed. Web links still need
+  Ctrl+click, since a plain click on hostile text must never navigate.
 - **A smoother voice conversation with Michael.** Settings → Voice gains three turn-taking
   controls. **Conversation pace** (Eager / Balanced / Patient) sets how soon he answers after you
   pause. **Let me interrupt Michael** decides whether talking over him cuts him off; turn it off on

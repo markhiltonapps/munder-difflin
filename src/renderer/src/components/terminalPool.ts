@@ -22,8 +22,7 @@ import { arabicJoinRanges } from '@/terminal/arabicJoiner';
 import { attachArabicSpacingFix } from '@/terminal/arabicSpacingFix';
 import { isArabicTerminalEnabled } from '@/terminal/arabicSetting';
 import {
-  classifyPathToken, isPathToken, stripPathToken, terminalLinkSpans, type PathAction
-} from '@shared/terminalPaths';
+  classifyPathToken, isPathToken, stripPathToken, terminalLinkSpans, type PathAction, relativePathCandidates } from '@shared/terminalPaths';
 import {
   createTerminalRecoveryState,
   normalizePtyChunk,
@@ -928,15 +927,24 @@ export function disposeTerminal(ptyId: string): void {
 // find tokens on a line and how to run the three verdicts.
 const mdStatCache = new Map<string, { isFile: boolean; path: string }>();
 
-function resolvePathCandidate(ptyId: string, raw: string): string | null {
+function resolvePathCandidates(ptyId: string, raw: string): string[] {
   const p = stripPathToken(raw);
-  if (!isPathToken(p)) return null;
-  if (p.startsWith('~/') || p.startsWith('/') || /^[A-Za-z]:[\\/]/.test(p)) return p;
-  // relative → resolve against the owning agent's cwd. Async store import keeps
+  if (!isPathToken(p)) return [];
+  if (p.startsWith('~/') || p.startsWith('/') || /^[A-Za-z]:[\\/]/.test(p)) return [p];
+  // relative → the owning agent's cwd, then the hive. Async store import keeps
   // this module usable in the node test harness (no zustand/react at load).
   const cwd = storeApi?.getState().agents.find((a) => a.ptyId === ptyId)?.cwd ?? null;
-  if (!cwd) return null;
-  return `${cwd}/${p.replace(/^\.\//, '')}`;
+  let home: string | null = null;
+  try { home = window.cth?.harnessHomeSync?.() ?? null; } catch { home = null; }
+  return relativePathCandidates(p, cwd, home);
+}
+
+/** Files the Showcase viewer renders as they are meant to be seen — a web page
+ *  as a page, a picture as a picture — rather than as source in the editor. */
+const VIEWER_EXTS = new Set(['html', 'htm', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg']);
+function viewerExt(p: string): boolean {
+  const m = /\.([a-z0-9]+)$/i.exec(p);
+  return !!m && VIEWER_EXTS.has(m[1].toLowerCase());
 }
 
 // The store is loaded lazily via dynamic import (resolved once, cached): a
@@ -953,25 +961,36 @@ void import('@/store/store')
   .then((m) => { storeApi = (m as unknown as { useStore: MdStoreShape }).useStore; })
   .catch(() => { /* store unavailable (tests) — link provider stays inert */ });
 
-/** Act on a verified path. `reveal` also takes any directory that reaches here:
- *  the IDE needs a file. A miss is silent by design — the token is agent output
- *  and may simply not exist.
+/** Act on a path token: the first candidate that exists wins. A miss is silent
+ *  by design — the token is agent output and may simply not exist.
  *
- *  Both non-reveal verdicts land in the IDE. The IDE already routes by type
- *  (Monaco for source, preview for markdown, the viewer for images), so this
- *  does not need to pass the verdict along — it only needs to know whether the
- *  file is ours to open at all. */
-async function activatePath(abs: string, action: PathAction): Promise<void> {
-  let hit = mdStatCache.get(abs);
-  if (!hit) {
+ *  A PLAIN click stays inside the app: web pages, pictures and PDFs open in the
+ *  Showcase viewer, everything else in the IDE (Monaco for source, preview for
+ *  markdown). Nothing a plain click does leaves the app or runs anything, which
+ *  is what makes it safe to act on hostile terminal text. A ⌘/Ctrl click
+ *  reveals the file in the OS file browser instead; a directory always reveals,
+ *  since neither in-app surface can show one. */
+async function activatePath(candidates: string[], action: PathAction, reveal: boolean): Promise<void> {
+  let hit: { isFile: boolean; path: string } | undefined;
+  for (const abs of candidates) {
+    hit = mdStatCache.get(abs);
+    if (hit) break;
     const res = await window.cth.statAbs(abs).catch(() => null);
-    if (!res || !res.exists) return;
+    if (!res || !res.exists) continue;
     hit = { isFile: res.isFile, path: res.path };
     if (mdStatCache.size > 500) mdStatCache.clear();
     mdStatCache.set(abs, hit);
+    break;
   }
-  if (action === 'reveal' || !hit.isFile) {
+  if (!hit) return;
+  if (reveal || !hit.isFile) {
     void window.cth.revealPath(hit.path).catch(() => { /* file browser refused */ });
+    return;
+  }
+  if (action === 'reveal' || viewerExt(hit.path)) {
+    // Pictures classify as 'reveal' upstream (the IDE cannot edit them); the
+    // Showcase viewer can show them, so they stay in-app too.
+    void import('@/showcase/store').then((m) => m.showcase.openAbs(hit!.path)).catch(() => { /* viewer unavailable */ });
     return;
   }
   storeApi?.getState().openFileInIde(hit.path);
@@ -1012,16 +1031,18 @@ function registerMarkdownLinkProvider(term: Terminal, ptyId: string): void {
             });
             continue;
           }
-          const abs = resolvePathCandidate(ptyId, span.raw);
-          if (!abs) continue;
+          const candidates = resolvePathCandidates(ptyId, span.raw);
+          if (!candidates.length) continue;
           const action = classifyPathToken(span.token);
           links!.push({
             range, text: span.raw,
             decorations: { underline: true, pointerCursor: true },
             activate: (event: MouseEvent | undefined) => {
-              // ⌘/Ctrl+click only — a plain click must keep going to the TUI.
-              if (event && !(event.metaKey || event.ctrlKey)) return;
-              void activatePath(abs, action);
+              // A plain click opens the file INSIDE the app (viewer or IDE);
+              // ⌘/Ctrl+click reveals it in the OS file browser. Only the
+              // in-app surfaces are reachable without the modifier.
+              const reveal = !!event && (event.metaKey || event.ctrlKey);
+              void activatePath(candidates, action, reveal);
             }
           });
         }

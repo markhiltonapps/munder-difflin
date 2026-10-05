@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, powerMonitor, powerSaveBlocker, screen, shell, Notification } from 'electron';
+import { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, powerMonitor, powerSaveBlocker, protocol, screen, shell, Notification } from 'electron';
 import { spawn } from 'node:child_process';
 import {
   rmSync, existsSync, readFileSync, readdirSync, statSync, cpSync, writeFileSync,
@@ -14,6 +14,8 @@ import { resolveCommand as resolveCliCommand, isSafeCommandName } from './shellE
 import { initAutoUpdater, abortPendingRestart } from './updater';
 import { RealtimeFloorWatcher } from './realtimeFloorWatcher';
 import { openTerminalAt } from './openTerminal';
+import { ShowcaseStore, serveShowcase } from './showcase';
+import { SHOWCASE_SCHEME, showcaseKind } from '../shared/showcase';
 import {
   readConfig, writeConfig, setAgentTokenCap, resetConfig, onConfigWritten, ensureHarnessHome, ensureClaudePermissionsAccepted,
   modelForRole, OPS_STANDUP_MISSION, HEARTBEAT_MISSION, COMPACT_MAINTENANCE_MISSION, type HarnessConfig, type ScheduledMission
@@ -2271,6 +2273,13 @@ async function handleHireLink(link: string): Promise<void> {
   deliverHire(res.manifest);
   analytics.trackFeature('hire_install');
 }
+
+// The Showcase serves deliverables to the renderer over its own scheme (see
+// src/shared/showcase.ts). Privileges must be declared before the app is ready;
+// the handler itself is installed in whenReady below.
+protocol.registerSchemesAsPrivileged([
+  { scheme: SHOWCASE_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
+]);
 
 // Register the protocol. In dev (electron .) Windows needs the explicit
 // exe+args form or the registration points at electron.exe with no entry.
@@ -4633,6 +4642,34 @@ ipcMain.handle('freeflow:transcribe', async (_evt, arg: unknown) => {
 const staplerRoot = (): string => readConfig().harnessHome || app.getPath('userData');
 const stapler = (): StaplerStore => new StaplerStore(staplerRoot());
 
+// ─── IPC: Showcase (deliverables agents hand the human) ───────────────────────
+// `<hive>/showcase` — beside the agents, inside the office, so it travels with
+// an export/import. One store per root; the watcher pushes showcase:changed so
+// the gallery and the sidebar badge update the moment a file lands.
+let showcaseInst: ShowcaseStore | null = null;
+function showcase(): ShowcaseStore {
+  const root = join(hive.root() ?? staplerRoot(), 'showcase');
+  if (!showcaseInst || showcaseInst.root !== root) {
+    showcaseInst?.stop();
+    showcaseInst = new ShowcaseStore(root);
+    showcaseInst.ensure();
+    showcaseInst.watch(() => { try { liveWebContents()?.send('showcase:changed'); } catch { /* window gone */ } });
+  }
+  return showcaseInst;
+}
+ipcMain.handle('showcase:list', () => ({ root: showcase().root, items: showcase().list() }));
+ipcMain.handle('showcase:markSeen', (_evt, rel: unknown) => ({ ok: typeof rel === 'string' && showcase().markSeen(rel) }));
+/** Open a deliverable in the default app (a page in the browser, a PDF in the
+ *  reader). Only files the gallery lists, or ones the terminal verified as a
+ *  deliverable kind, so this is never a way to launch something else. */
+ipcMain.handle('showcase:open', async (_evt, abs: unknown) => {
+  if (typeof abs !== 'string' || !abs || abs.includes('\0') || !showcaseKind(abs)) return { ok: false, error: 'not a deliverable' };
+  const st = await statAbs(abs);
+  if (!st.exists || !st.isFile) return { ok: false, error: 'missing' };
+  const err = await shell.openPath(st.path);
+  return err ? { ok: false, error: err } : { ok: true };
+});
+
 ipcMain.handle('stapler:setConfig', (_evt, patch: unknown) => {
   const p = (patch ?? {}) as { enabled?: unknown; vocabulary?: unknown };
   const next: Partial<HarnessConfig> = {};
@@ -5658,6 +5695,7 @@ function onSystemResume(reason: string): void {
 }
 
 app.whenReady().then(() => {
+  protocol.handle(SHOWCASE_SCHEME, (req) => serveShowcase(req));
   // Realtime Michael mic-gate hygiene (rt-8 / Pam rt-10 nit): the voice session
   // opens the mic permission gate by persisting realtimeVoiceEnabled=true and
   // closes it on disconnect — but a hard crash/reload mid-session skips that

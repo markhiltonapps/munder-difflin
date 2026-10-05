@@ -1427,6 +1427,16 @@ const api = {
    *  dead air. */
   realtimeFillerClip: (text: string): Promise<{ ok: true; dataUrl: string } | { ok: false; error: string }> =>
     ipcRenderer.invoke('realtime:fillerClip', text),
+  // Showcase — deliverables agents put under <hive>/showcase for the human.
+  showcaseList: (): Promise<{ root: string; items: import('../shared/showcase').ShowcaseItem[] }> =>
+    ipcRenderer.invoke('showcase:list'),
+  showcaseMarkSeen: (rel: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('showcase:markSeen', rel),
+  showcaseOpen: (abs: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('showcase:open', abs),
+  onShowcaseChanged: (cb: () => void): (() => void) => {
+    const listener = (): void => cb();
+    ipcRenderer.on('showcase:changed', listener);
+    return () => ipcRenderer.removeListener('showcase:changed', listener);
+  },
   // rt-5 voice ACTIONS — the renderer holds NO policy; main (realtimeActions.ts) owns
   // the tiering, two-step verbal confirm, hard allowlist, and michael-voice
   // attribution. These just forward {verb,...args} and speak back `spoken`.

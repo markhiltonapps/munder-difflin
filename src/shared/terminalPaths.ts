@@ -235,3 +235,18 @@ export function classifyPathToken(token: string): PathAction {
   if (EDIT_EXTS.has(ext)) return 'edit';
   return 'reveal';
 }
+
+/** Where a relative path printed by an agent may live, in the order to try:
+ *  the agent's own working directory, then the shared hive (agents write
+ *  `agents/<id>/work/report.md` meaning `<hive>/agents/…`), then the office
+ *  home that holds the hive. */
+export function relativePathCandidates(p: string, cwd: string | null, harnessHome: string | null): string[] {
+  const rel = p.replace(/^\.\//, '');
+  const out: string[] = [];
+  if (cwd) out.push(`${cwd}/${rel}`);
+  if (harnessHome) {
+    out.push(`${harnessHome}/hive/${rel}`);
+    out.push(`${harnessHome}/${rel}`);
+  }
+  return out;
+}
