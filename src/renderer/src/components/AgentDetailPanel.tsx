@@ -17,6 +17,7 @@ import { EditAgentModal } from './EditAgentModal';
 import { GitTab } from './GitTab';
 import { Icon } from './Icon';
 import { AgentNameEditor } from './AgentNameEditor';
+import { RealtimeMichaelToggle } from './RealtimeMichaelToggle';
 import { useStore, type Agent } from '@/store/store';
 import { usePtyParser } from '@/hooks/usePtyParser';
 
@@ -172,6 +173,10 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
             }}>{agent.project}</span>
           </div>
         </div>
+        {/* Two-way voice with the orchestrator. His card in the classic strip
+            carries this too, but the sidebar layout has no card strip, so the
+            panel header is the one place it is reachable in both layouts. */}
+        {agent.isGod && <RealtimeMichaelToggle />}
         <PixelButton variant="secondary" size="sm" onClick={() => setEditOpen(true)}>
           <span
             className="cth-tip cth-tip-wrap"
