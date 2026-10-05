@@ -163,7 +163,8 @@ test('save writes json + markdown beside each other; list is newest first; delet
 test('transcription and the loopback handler both sit behind staplerEnabled, and the key never leaves main', () => {
   const main = read('src/main/index.ts');
   assert.match(main, /ipcMain\.handle\('stapler:transcribe'[\s\S]*?if \(cfg\.staplerEnabled !== true\) return \{ ok: false/);
-  assert.match(main, /setDisplayMediaRequestHandler\([\s\S]*?if \(readConfig\(\)\.staplerEnabled !== true\) \{ callback\(\{\}\); return; \}/);
+  // The handler refuses only an explicit false: an unsaved flag reads as on, exactly as the Settings toggle shows it.
+  assert.match(main, /setDisplayMediaRequestHandler\([\s\S]*?if \(readConfig\(\)\.staplerEnabled === false\) \{ diag\('flag-off'\); callback\(\{\}\); return; \}/);
   assert.match(main, /cfg\.staplerEnabled === true;/, 'the mic permission gate must include Stapler');
   const preload = read('src/preload/index.ts');
   assert.doesNotMatch(preload, /groqApiKey:\s*\(/, 'no preload method hands the key out');
