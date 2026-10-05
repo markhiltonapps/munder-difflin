@@ -28,6 +28,12 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Stapler: pick your microphone beside Record, and no headphones needed.** The Stapler tab now
+  shows a microphone chooser next to Record, and a line naming the output device Windows is
+  capturing as the other side, with a link to Windows sound settings to change it. Without
+  headphones your microphone also hears the call through your speakers, so the other party used to
+  appear twice, once under Them and once, fainter, under You. An echo guard now drops a You line
+  that repeats a Them line from the same moment, whichever side's transcript arrives first.
 - **Payroll.** Who is on the floor, what they run on, and what they cost. Every agent's row in the
   sidebar and on the classic cards gains a line with its model, tokens and cost today; hovering
   shows the last 7 days, 30 days and all time. The new Payroll tab in the Command Center lists

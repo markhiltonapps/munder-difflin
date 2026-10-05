@@ -312,6 +312,7 @@ export interface HarnessConfig {
   /** Stapler meeting transcription (mirrors src/main/config.ts). */
   staplerEnabled?: boolean;
   staplerVocabulary?: string;
+  staplerMicDeviceId?: string | null;
   /** Realtime Michael voice loop — true ONLY while a session holds the mic
    *  (renderer session sets it at start()/stop()); the main mic permission gate
    *  reads it. Default off. */
@@ -1316,7 +1317,7 @@ const api = {
 
   // ─── Stapler (meeting transcription: You + Them → transcript → any agent) ─────
   /** Persist Stapler settings (flag / vocabulary). The Groq key is the Free Flow one. */
-  staplerSetConfig: (patch: { enabled?: boolean; vocabulary?: string }): Promise<{ ok: boolean }> =>
+  staplerSetConfig: (patch: { enabled?: boolean; vocabulary?: string; micDeviceId?: string | null }): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('stapler:setConfig', patch),
   /** Transcribe one captured chunk via Groq, with the vocabulary as the spelling
    *  hint. Gated on the flag + a key, like Free Flow. */

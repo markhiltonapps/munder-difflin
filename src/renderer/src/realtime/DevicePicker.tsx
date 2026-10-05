@@ -21,7 +21,7 @@ import { useTranslation } from 'react-i18next';
 import { useRealtimeMichael } from './session';
 import { useStore } from '@/store/store';
 
-interface AudioDevice {
+export interface AudioDevice {
   deviceId: string;
   label: string;
 }
@@ -34,7 +34,7 @@ const CAN_PICK_SPEAKER =
 
 /** Enumerate audio devices of one kind, with a generic fallback label when the
  *  real label is hidden (no mic permission granted yet this session). */
-async function listDevices(kind: 'audioinput' | 'audiooutput'): Promise<AudioDevice[]> {
+export async function listDevices(kind: 'audioinput' | 'audiooutput'): Promise<AudioDevice[]> {
   if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) return [];
   const fallback = kind === 'audioinput' ? 'Microphone' : 'Speaker';
   const devices = await navigator.mediaDevices.enumerateDevices();

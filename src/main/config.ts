@@ -372,6 +372,8 @@ export interface HarnessConfig {
   /** Names and terms Whisper should spell right, one per line or comma-separated.
    *  Sent as the recognition prompt with every Stapler chunk. */
   staplerVocabulary?: string;
+  /** Microphone the Stapler records You from (device id); null/absent = system default. */
+  staplerMicDeviceId?: string | null;
 
   // ─── Realtime Michael (premium speech-to-speech voice orchestrator) ─────────
   /** True ONLY while a Realtime Michael voice session is live: the renderer
@@ -496,6 +498,7 @@ const DEFAULTS: HarnessConfig = {
   freeflowModel: 'whisper-large-v3-turbo',
   staplerEnabled: true,
   staplerVocabulary: undefined,
+  staplerMicDeviceId: null,
   realtimeVoiceEnabled: false,
   realtimeIdleDisconnectMs: 180_000,
   realtimePace: 'balanced',

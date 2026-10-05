@@ -215,3 +215,38 @@ export function classifyThemFailure(err: unknown): ThemFailure {
   if (name === 'NotSupportedError' || name === 'TypeError' || msg.includes('not supported')) return 'unsupported';
   return 'error';
 }
+
+/** Words of a transcript, lower-cased, punctuation dropped. */
+function wordsOf(text: string): string[] {
+  return text.toLowerCase().replace(/[^\p{L}\p{N}' ]+/gu, ' ').split(/\s+/).filter((w) => w.length > 1);
+}
+
+/**
+ * Is a "You" line really the other party heard through the speakers?
+ *
+ * Without headphones the microphone hears the call audio too, so the same
+ * sentence can arrive twice: once from the system-audio side (Them) and once,
+ * fainter, from the microphone (You). The two transcripts are near-identical
+ * in words, so word overlap is the test: a You line whose words are mostly
+ * contained in a Them line from the same moment is an echo, not a remark.
+ * Short lines ("yes", "okay") are left alone; both people say those.
+ */
+export function isBleedDuplicate(youText: string, themText: string): boolean {
+  const a = wordsOf(youText), b = wordsOf(themText);
+  if (a.length < 3 || b.length < 3) return false;
+  const bs = new Set(b);
+  let hit = 0;
+  for (const w of a) if (bs.has(w)) hit += 1;
+  const contained = hit / a.length;        // how much of You is inside Them
+  const as = new Set(a);
+  let hit2 = 0;
+  for (const w of b) if (as.has(w)) hit2 += 1;
+  const jaccard = (hit) / (as.size + bs.size - hit2 || 1);
+  return contained >= 0.75 || jaccard >= 0.6;
+}
+
+/** Them segments that overlap a You segment's time range (± a slack, since the
+ *  two sides are chunked independently). */
+export function overlappingThem(seg: { t0: number; t1: number }, segments: StaplerSegment[], slackMs = 8_000): StaplerSegment[] {
+  return segments.filter((s) => s.who === 'them' && s.t1 >= seg.t0 - slackMs && s.t0 <= seg.t1 + slackMs);
+}

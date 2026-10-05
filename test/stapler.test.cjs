@@ -204,7 +204,7 @@ test('system audio is requested before the microphone, and hotkey/widget starts 
   const read = (rel) => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
   const session = read('src/renderer/src/stapler/session.ts');
   const loop = session.indexOf('const loopback = await openLoopback();');
-  const mic = session.indexOf('mic = await openMic();');
+  const mic = session.indexOf('mic = await openMic(micDevice);');
   assert.ok(loop > 0 && mic > loop, 'getDisplayMedia needs the click to be fresh; the mic does not');
   assert.match(session, /themFailure: loopback\.failure/);
   const main = read('src/main/index.ts');
@@ -216,5 +216,38 @@ test('system audio is requested before the microphone, and hotkey/widget starts 
   for (const code of ['en', 'zh-CN', 'ar']) {
     const l = JSON.parse(read(`src/renderer/src/i18n/locales/${code}.json`));
     assert.deepEqual(Object.keys(l.stapler.themFailure).sort(), ['denied', 'error', 'gesture', 'no-audio', 'unsupported'], code);
+  }
+});
+
+// --- echo guard + devices ----------------------------------------------------------
+
+test('a You line that repeats a Them line of the same moment is an echo; short or different lines are not', () => {
+  const { isBleedDuplicate, overlappingThem } = loadTs('src/shared/stapler.ts');
+  assert.equal(isBleedDuplicate('So the wholesale agreement needs a signature by Friday.', 'So the wholesale agreement needs a signature by Friday'), true);
+  assert.equal(isBleedDuplicate('the wholesale agreement needs a signature', 'Okay so the wholesale agreement needs a signature by Friday, right?'), true, 'fainter echo loses a few words');
+  assert.equal(isBleedDuplicate('Yes.', 'Yes.'), false, 'both people say yes');
+  assert.equal(isBleedDuplicate('Can we move that to Tuesday afternoon instead?', 'The wholesale agreement needs a signature by Friday.'), false);
+  const them = [{ id: 'a', who: 'them', t0: 10_000, t1: 20_000, text: 'x' }, { id: 'b', who: 'them', t0: 60_000, t1: 70_000, text: 'y' }, { id: 'c', who: 'you', t0: 12_000, t1: 14_000, text: 'z' }];
+  assert.deepEqual(overlappingThem({ t0: 22_000, t1: 25_000 }, them).map((s) => s.id), ['a'], 'within the slack after a');
+  assert.deepEqual(overlappingThem({ t0: 40_000, t1: 45_000 }, them).map((s) => s.id), [], 'between the two');
+});
+
+test('the microphone is a choice beside Record and the capture note names the output device', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const read = (rel) => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
+  const session = read('src/renderer/src/stapler/session.ts');
+  assert.match(session, /async function openMic\(deviceId: string \| null\)/);
+  assert.match(session, /deviceId: \{ exact: deviceId \}/);
+  assert.match(session, /echoCancellation: true, noiseSuppression: true, autoGainControl: true/);
+  assert.match(session, /isBleedDuplicate\(seg\.text, th\.text\)/);
+  assert.match(read('src/main/index.ts'), /next\.staplerMicDeviceId = p\.micDeviceId \? p\.micDeviceId : null;/);
+  const tab = read('src/renderer/src/components/StaplerTab.tsx');
+  assert.match(tab, /staplerSetConfig\(\{ micDeviceId: id \|\| null \}\)/);
+  assert.match(tab, /t\('stapler\.capturing', \{ device: outputName \|\| t\('stapler\.defaultOutput'\) \}\)/);
+  assert.match(tab, /openExternal\('ms-settings:sound'\)/);
+  for (const code of ['en', 'zh-CN', 'ar']) {
+    const l = JSON.parse(read(`src/renderer/src/i18n/locales/${code}.json`));
+    for (const k of ['systemDefaultMic', 'micPickTip', 'capturing', 'capturingTip', 'defaultOutput', 'soundSettings']) assert.ok(l.stapler[k], `${code}.stapler.${k}`);
   }
 });

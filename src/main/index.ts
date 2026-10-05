@@ -4678,9 +4678,12 @@ ipcMain.handle('showcase:open', async (_evt, abs: unknown) => {
 });
 
 ipcMain.handle('stapler:setConfig', (_evt, patch: unknown) => {
-  const p = (patch ?? {}) as { enabled?: unknown; vocabulary?: unknown };
+  const p = (patch ?? {}) as { enabled?: unknown; vocabulary?: unknown; micDeviceId?: unknown };
   const next: Partial<HarnessConfig> = {};
   if (typeof p.enabled === 'boolean') next.staplerEnabled = p.enabled;
+  if (p.micDeviceId === null || (typeof p.micDeviceId === 'string' && p.micDeviceId.length <= 256)) {
+    next.staplerMicDeviceId = p.micDeviceId ? p.micDeviceId : null;
+  }
   if (typeof p.vocabulary === 'string') next.staplerVocabulary = p.vocabulary.trim().slice(0, 4000) || undefined;
   writeConfig(next);
   syncStaplerShortcut();

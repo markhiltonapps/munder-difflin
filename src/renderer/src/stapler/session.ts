@@ -28,7 +28,7 @@ import { useSyncExternalStore } from 'react';
 import { useStore } from '@/store/store';
 import {
   agentMessageFor, defaultTitle, isPhantomTranscript, newMeetingId,
-  type StaplerMeeting, type StaplerSegment, type StaplerSpeaker, classifyThemFailure, type ThemFailure } from '@shared/stapler';
+  type StaplerMeeting, type StaplerSegment, type StaplerSpeaker, classifyThemFailure, type ThemFailure, isBleedDuplicate, overlappingThem } from '@shared/stapler';
 
 export type StaplerStatus = 'idle' | 'starting' | 'recording' | 'stopping';
 
@@ -224,7 +224,20 @@ async function transcribeChunk(meetingId: string, who: StaplerSpeaker, blob: Blo
       if (text && !isPhantomTranscript(text)) {
         segSeq += 1;
         const seg: StaplerSegment = { id: `s-${Date.now()}-${segSeq}`, who, t0, t1, text };
-        patchMeeting(meetingId, (m) => ({ ...m, segments: [...m.segments, seg] }));
+        patchMeeting(meetingId, (m) => {
+          if (!m.themCaptured) return { ...m, segments: [...m.segments, seg] };
+          // Echo guard. The two sides are transcribed independently, so the
+          // echo can land before or after the original: a You line that
+          // duplicates a Them line of the same moment is dropped, and a Them
+          // line that arrives second removes the You echoes already shown.
+          if (who === 'you') {
+            if (overlappingThem(seg, m.segments).some((th) => isBleedDuplicate(seg.text, th.text))) return m;
+            return { ...m, segments: [...m.segments, seg] };
+          }
+          const kept = m.segments.filter((s) =>
+            !(s.who === 'you' && overlappingThem(s, [seg]).length > 0 && isBleedDuplicate(s.text, seg.text)));
+          return { ...m, segments: [...kept, seg] };
+        });
       }
     } else if (res.error) {
       setState({ error: res.error });
@@ -237,10 +250,17 @@ async function transcribeChunk(meetingId: string, who: StaplerSpeaker, blob: Blo
 }
 
 /** Open the microphone. Throws a readable message. */
-async function openMic(): Promise<MediaStream> {
+async function openMic(deviceId: string | null): Promise<MediaStream> {
   if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) throw new Error('microphone not available');
+  // Echo cancellation and noise suppression take some of the call audio back
+  // out of the mic; the echo guard in transcribeChunk handles what is left.
+  const base: MediaTrackConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
   try {
-    return await navigator.mediaDevices.getUserMedia({ audio: true });
+    if (deviceId) {
+      try { return await navigator.mediaDevices.getUserMedia({ audio: { ...base, deviceId: { exact: deviceId } } }); }
+      catch { /* that device is gone: fall through to the system default */ }
+    }
+    return await navigator.mediaDevices.getUserMedia({ audio: base });
   } catch (e) {
     const name = e instanceof DOMException ? e.name : '';
     throw new Error(name === 'NotAllowedError' ? 'microphone permission denied' : 'could not open microphone');
@@ -274,9 +294,11 @@ async function start(): Promise<void> {
   // recent, and the microphone has no such clock.
   const loopback = await openLoopback();
   const loop = loopback.stream;
+  let micDevice: string | null = null;
+  try { micDevice = (await window.cth.getConfig()).staplerMicDeviceId ?? null; } catch { micDevice = null; }
   let mic: MediaStream;
   try {
-    mic = await openMic();
+    mic = await openMic(micDevice);
   } catch (e) {
     loop?.getTracks().forEach((t) => t.stop());
     setState({ status: 'idle', error: e instanceof Error ? e.message : 'could not open microphone' });

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { listDevices, type AudioDevice } from '@/realtime/DevicePicker';
 import { useTranslation } from 'react-i18next';
 import { PixelButton } from './PixelButton';
 import { Icon } from './Icon';
@@ -120,6 +121,32 @@ export function StaplerTab() {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+  // Devices beside Record: which microphone is You, and which output Windows
+  // is capturing as Them (the system default; Windows decides that one).
+  const [mics, setMics] = useState<AudioDevice[]>([]);
+  const [outputName, setOutputName] = useState<string>('');
+  const [micDevice, setMicDevice] = useState<string>('');
+  useEffect(() => {
+    let alive = true;
+    window.cth.getConfig().then((c) => { if (alive) setMicDevice(c.staplerMicDeviceId ?? ''); }).catch(() => { /* default */ });
+    const refresh = async () => {
+      const [ins, outs] = await Promise.all([listDevices('audioinput'), listDevices('audiooutput')]);
+      if (!alive) return;
+      setMics(ins);
+      const def = outs.find((o) => o.deviceId === 'default') ?? outs[0];
+      setOutputName(def ? def.label.replace(/^default\s*[-–]\s*/i, '') : '');
+    };
+    void refresh();
+    const md = navigator.mediaDevices;
+    md?.addEventListener?.('devicechange', refresh);
+    return () => { alive = false; md?.removeEventListener?.('devicechange', refresh); };
+  }, []);
+  const pickMic = (id: string) => {
+    setMicDevice(id);
+    void window.cth.staplerSetConfig({ micDeviceId: id || null });
+  };
+  const isWindows = navigator.userAgent.includes('Windows');
+
   const openMeeting = (id: string) => {
     if (recording) return;
     void window.cth.staplerGet(id).then((mm) => { if (mm) staplerSession.open(mm); });
@@ -143,6 +170,32 @@ export function StaplerTab() {
             {st.status === 'starting' ? t('stapler.starting') : recording ? t('stapler.stop') : t('stapler.record')}
           </span>
         </PixelButton>
+        {!recording && st.status !== 'starting' && (
+          <label title={t('stapler.micPickTip')} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--cth-ink-500)' }}>
+            <Icon name="mic" />
+            <select
+              value={micDevice}
+              onChange={(e) => pickMic(e.target.value)}
+              style={{ ...input, width: 'auto', maxWidth: 240, padding: '4px 6px', fontSize: 12 }}
+            >
+              <option value="">{t('stapler.systemDefaultMic')}</option>
+              {mics.map((d) => <option key={d.deviceId} value={d.deviceId}>{d.label}</option>)}
+            </select>
+          </label>
+        )}
+        {!recording && st.status !== 'starting' && loopback !== false && (
+          <span title={t('stapler.capturingTip')} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--cth-ink-500)', minWidth: 0 }}>
+            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 260 }}>
+              {t('stapler.capturing', { device: outputName || t('stapler.defaultOutput') })}
+            </span>
+            {isWindows && (
+              <button
+                onClick={() => { void window.cth.openExternal('ms-settings:sound'); }}
+                style={{ border: 'none', background: 'transparent', color: 'var(--cth-ink-900)', textDecoration: 'underline', cursor: 'pointer', fontSize: 12, padding: 0 }}
+              >{t('stapler.soundSettings')}</button>
+            )}
+          </span>
+        )}
         {(recording || st.status === 'starting') && (
           <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 13, color: 'var(--cth-ink-900)' }}>
             <span style={{ display: 'inline-block', width: 8, height: 8, background: 'var(--cth-coral)', marginInlineEnd: 6, verticalAlign: 'middle' }} />
