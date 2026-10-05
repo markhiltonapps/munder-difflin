@@ -2260,9 +2260,14 @@ if (!gotInstanceLock) {
   app.quit();
 } else {
   app.on('second-instance', (_evt, argv) => {
-    if (mainWindow) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
       mainWindow.focus();
+    } else if (!allowQuit && app.isReady()) {
+      // The window went away but the app did not (it is not quitting):
+      // launching again should give the user their office back, not nothing.
+      createWindow();
     }
     const link = argv.find((a) => a.startsWith('munderdifflin://'));
     if (link) void handleHireLink(link);
@@ -2458,7 +2463,23 @@ function createWindow(opts: { floor?: boolean } = {}): BrowserWindow {
     }
     // Primary window: existing app-wide quit warning (renderer modal).
     const count = ptyManager.list().length;
-    if (count === 0) return;
+    if (count === 0) {
+      // No terminals, so nothing to wrap up — but closing the primary window
+      // on Windows and Linux IS quitting the app, and the office clock on the
+      // floor is wired to close(). One tap on a wall clock must not end the
+      // session silently: ask, natively, so it works even if the renderer is
+      // in no state to show a modal.
+      const choice = dialog.showMessageBoxSync(win, {
+        type: 'question',
+        buttons: ['Clock out', 'Stay'],
+        defaultId: 1,
+        cancelId: 1,
+        message: 'Clock out and quit Munder Difflin?',
+        detail: 'Your office is saved; it is all here when you come back.'
+      });
+      if (choice === 1) e.preventDefault();
+      return;
+    }
     e.preventDefault();
     win.focus();
     wc.send('app:closeRequested', { ptyCount: count });
@@ -3916,6 +3937,11 @@ ipcMain.handle('history:search', (_evt, query: unknown, limit: unknown) =>
  *  and the closing-time conclusion (after the god confirmed the floor saved). */
 function teardownAndQuit(): void {
   allowQuit = true;
+  // Failsafe: whatever below hangs (a ConPTY kill, a sidecar that will not
+  // stop, a DB close), the process must not outlive its windows. A quit that
+  // leaves a windowless process is a taskbar icon that does nothing: the
+  // single-instance lock then also blocks relaunching until it is killed.
+  setTimeout(() => { try { app.exit(0); } catch { process.exit(0); } }, 4000);
   // Each teardown step is best-effort: a throw here (e.g. a dying child or a
   // half-torn-down socket) must never abort the quit or pop a crash dialog.
   try { clearMissionTimers(); } catch (e) { console.error('[quit] clearMissionTimers:', e); }
