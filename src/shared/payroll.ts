@@ -30,6 +30,10 @@ export interface PayrollAgent {
   /** Some of this agent's usage was on a model with no price on file, so the
    *  dollar figure is a floor, not the total. */
   unknownPrice: boolean;
+  /** Some of this agent's usage was priced from a table row whose rate varies
+   *  by upstream (a routed model with no exact charge on the row), so the
+   *  figure is an estimate. */
+  variablePrice?: boolean;
   /** Any usage on a Claude model: that spend is API-equivalent, not a bill,
    *  when the agents run on a subscription. */
   claude: boolean;

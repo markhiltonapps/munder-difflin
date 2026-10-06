@@ -123,6 +123,8 @@ export interface HarnessConfig {
   realtimeVoice?: string;
   costCapUsd?: number;
   modelPriceOverrides?: string;
+  /** Model tiers (worker / routine). Mirrors src/main/config.ts. */
+  modelTiers?: import('@shared/modelTiers').ModelTiers;
   /** Hard total-token ceiling across active agents (the user-facing budget). */
   costCapTokens?: number;
   /** Per-agent total-token ceiling, keyed by agent id. Overrides the floor budget

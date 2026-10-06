@@ -84,9 +84,15 @@ export function opencodeSamples(rows: OpencodeRow[], agentId: string, seen: Set<
     if (input + output + cacheRead + cacheCreation <= 0) { seen.add(r.id); continue; }
     const model = [d.providerID, d.modelID].filter(Boolean).join('/') || null;
     const ts = Number(d.time?.completed) || Number(d.time?.created) || Number(r.time_updated) || Date.now();
+    // OpenCode prices each message itself from the live models.dev catalog;
+    // when it did, that figure is the engine's own and payroll keeps it.
+    const ownCost = typeof d.cost === 'number' && d.cost > 0;
+    const reasoning = Number(d.tokens.reasoning) || 0;
     samples.push({
       agentId, sessionId: `proxy-oc-${r.session_id}`, ts, input, output, cacheRead, cacheCreation, model,
-      usd: typeof d.cost === 'number' && d.cost > 0 ? d.cost : estimateCostUsd(model, { inputTokens: input, outputTokens: output, cacheReadTokens: cacheRead, cacheWriteTokens: cacheCreation })
+      usd: ownCost ? d.cost as number : estimateCostUsd(model, { inputTokens: input, outputTokens: output, cacheReadTokens: cacheRead, cacheWriteTokens: cacheCreation }),
+      ...(ownCost ? { usdExact: true } : {}),
+      ...(reasoning > 0 ? { reasoning } : {})
     });
     seen.add(r.id);
   }

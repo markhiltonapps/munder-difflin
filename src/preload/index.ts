@@ -349,6 +349,9 @@ export interface HarnessConfig {
   providerBaseUrls?: Partial<Record<AgentProvider, string>>;
   /** Per-CLI-provider default model slug, used to pre-fill the model picker. */
   providerDefaultModels?: Partial<Record<AgentProvider, string>>;
+  /** Model tiers (worker / routine): engine + model + effort + output cap per
+   *  kind of job. Mirrors src/main/config.ts. */
+  modelTiers?: import('../shared/modelTiers').ModelTiers;
 }
 
 export interface MemoryStatus {
@@ -1423,6 +1426,16 @@ const api = {
     ipcRenderer.invoke('providerKey:has', backend),
   providerKeyClear: (backend: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('providerKey:clear', backend),
+  /** Where a backend key comes from: 'settings' (stored here), 'env' (the app was
+   *  launched with the standard variable set), or null. Never the key. */
+  providerKeySource: (backend: string): Promise<'settings' | 'env' | null> =>
+    ipcRenderer.invoke('providerKey:source', backend),
+  /** OpenRouter "Test connection": one short real call per configured tier (and
+   *  any extra model ids), with tokens and the exact cost OpenRouter reports. */
+  openRouterProbe: (extraModels?: string[]): Promise<
+    | { ok: true; results: import('../main/openrouter').ProbeResult[] }
+    | { ok: false; error: string }
+  > => ipcRenderer.invoke('openrouter:probe', extraModels ?? []),
   // Realtime Michael (voice orchestrator) — MAIN mints a short-lived EPHEMERAL token
   // from the BYOK OpenAI key; the real key NEVER crosses IPC. `realtimeHasOpenAiKey`
   // is a presence boolean only (gates the voice toggle, like providerKeyHas).

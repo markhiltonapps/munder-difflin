@@ -157,6 +157,20 @@ export interface AgentMeta {
   isAssistant?: boolean;
 }
 
+/** What one proxy-bridge sidecar is started with. */
+export interface ProxyBridgeConfig {
+  sock: string;
+  sessionId: string;
+  api: 'openai' | 'anthropic';
+  upstream: string;
+  /** Reasoning effort the sidecar adds to requests that do not set one. */
+  effort?: string;
+  /** Output cap the sidecar adds to requests that do not set one. */
+  maxOutputTokens?: number;
+  /** Upstream is OpenRouter: ask for usage accounting (exact cost per call). */
+  openrouter?: boolean;
+}
+
 export interface RegistryAgent extends AgentMeta {
   status: 'idle' | 'working' | 'blocked' | 'gone';
   lastSeen: number;
@@ -733,6 +747,10 @@ export class HiveManager {
        *  MemPalace dir, which `mempalace` mutates). Absolute paths; ignored
        *  for providers without a sandbox. */
       extraWritableDirs?: string[];
+      /** Model-tier tuning for a proxy-bridged engine (qwen/crush): the sidecar
+       *  adds the reasoning effort and output cap to requests the CLI leaves
+       *  unset, and asks OpenRouter for exact per-call cost. */
+      proxyTuning?: { effort?: string; maxOutputTokens?: number; openrouter?: boolean };
     } = {}
   ): Promise<SpawnInjection> {
     const root = this.root();
@@ -929,7 +947,12 @@ export class HiveManager {
             // slow sidecar start past the 4s ceiling), so try a few times before
             // giving up: without this ONE bad moment at spawn cost the agent its
             // hive events for the whole session.
-            const port = await this.startProxyBridgeWithRetry(meta.id, { sock, sessionId, api: desc.api, upstream });
+            const tuning = opts.proxyTuning ?? {};
+            const openrouter = tuning.openrouter === true || /^https?:\/\/openrouter\.ai(\/|$)/i.test(upstream);
+            const port = await this.startProxyBridgeWithRetry(meta.id, {
+              sock, sessionId, api: desc.api, upstream,
+              effort: tuning.effort, maxOutputTokens: tuning.maxOutputTokens, openrouter
+            });
             // Only redirect the CLI through the proxy if the sidecar actually bound a
             // port. On failure leave routing untouched → the CLI talks to its real
             // upstream directly (degraded: no synthesized hive events, but it still
@@ -1378,7 +1401,7 @@ export class HiveManager {
    *  listener. Resolves the bound port, or 0 once every attempt has failed. */
   private async startProxyBridgeWithRetry(
     agentId: string,
-    cfg: { sock: string; sessionId: string; api: 'openai' | 'anthropic'; upstream: string }
+    cfg: ProxyBridgeConfig
   ): Promise<number> {
     for (let attempt = 1; attempt <= PROXY_BIND_ATTEMPTS; attempt++) {
       const port = await this.startProxyBridge(agentId, cfg);
@@ -1393,7 +1416,7 @@ export class HiveManager {
 
   private startProxyBridge(
     agentId: string,
-    cfg: { sock: string; sessionId: string; api: 'openai' | 'anthropic'; upstream: string }
+    cfg: ProxyBridgeConfig
   ): Promise<number> {
     this.stopProxyBridge(agentId);
     const script = this.proxyShimPath();
@@ -1412,7 +1435,12 @@ export class HiveManager {
             AGENT_ID: agentId,
             UPSTREAM_BASE_URL: cfg.upstream,
             HIVE_PROXY_SESSION: cfg.sessionId,
-            HIVE_PROXY_API: cfg.api
+            HIVE_PROXY_API: cfg.api,
+            // Model-tier tuning + exact-cost flavor (see PROXY_BRIDGE_SHIM). Absent
+            // values are left out so the sidecar's defaults apply.
+            ...(cfg.effort ? { HIVE_PROXY_REASONING: cfg.effort } : {}),
+            ...(cfg.maxOutputTokens ? { HIVE_PROXY_MAX_TOKENS: String(cfg.maxOutputTokens) } : {}),
+            ...(cfg.openrouter ? { HIVE_PROXY_FLAVOR: 'openrouter' } : {})
           },
           // Read the port line from stdout; never inherit stdio (the sidecar must
           // never write into the agent's terminal or leak request bodies to a log).
@@ -1580,7 +1608,7 @@ export class HiveManager {
     // saying nothing, and COMMANDS.md documents it either way for the case where
     // the operator turns it on after god was already running.
     const spawnQueueLine = meta.isGod && this.orchestratorMaySpawn()
-      ? `SPAWNING A WORKER: you can start an ephemeral worker yourself by writing ONE JSON file into ${inRoot('spawn-requests')}/<id>.json. Required: \`objective\` (what the worker must do) and \`cwd\` (the repo it runs in). Optional: \`name\`, \`command\` (overrides the provider default), \`provider\` (selects its default CLI when command is omitted), \`model\`, \`isolate\` (default true = its own git worktree), \`tokenCap\`, and \`slack\` ({channel, thread_ts}) to route its failures back to a thread. The harness polls that directory, spawns \`worker-<id>\`, and moves the request to \`spawn-requests/.done/\` on success or \`.failed/\` with a reason. This is the ONLY way you can spawn; a hire manifest under research/hires/ needs the human to confirm it in the UI, so it is not a route you can complete on your own. Reuse an existing agent first, as above — a worker is a fresh spend every time.`
+      ? `SPAWNING A WORKER: you can start an ephemeral worker yourself by writing ONE JSON file into ${inRoot('spawn-requests')}/<id>.json. Required: \`objective\` (what the worker must do) and \`cwd\` (the repo it runs in). Optional: \`tier\` ("worker" or "routine" — picks the engine + model the operator configured for that kind of job in Settings; the current values are in ${inRoot('tiers.json')}), \`name\`, \`command\` (overrides the provider default), \`provider\` (selects its default CLI when command is omitted), \`model\`, \`isolate\` (default true = its own git worktree), \`tokenCap\`, and \`slack\` ({channel, thread_ts}) to route its failures back to a thread. CHOOSE THE TIER BY THE JOB: "routine" for mechanical work (triage, formatting, summaries, look-ups, verification passes), "worker" for implementation and anything that must be right. If a routine worker fails or reports it cannot, re-dispatch ONCE as "worker"; never escalate a worker's job onto your own model. The harness polls that directory, spawns \`worker-<id>\`, and moves the request to \`spawn-requests/.done/\` on success or \`.failed/\` with a reason. This is the ONLY way you can spawn; a hire manifest under research/hires/ needs the human to confirm it in the UI, so it is not a route you can complete on your own. Reuse an existing agent first, as above — a worker is a fresh spend every time.`
       : '';
     const godLine = meta.isGod
       ? 'You are the GOD / ORCHESTRATOR of this hive — your job is to ORCHESTRATE, not to implement: maintain live situational awareness and delegate the work. (1) AWARENESS — always know what is going on: keep an accurate picture of every agent (active vs archived/idle), the task board, and all in-flight work; drain your inbox continually and triage every other agent\'s requests, answering clarifications so the team runs autonomously. (2) DELEGATE — decompose work and fan it out to the hive agents via their inboxes (route messages and assign owners; do not do their jobs); do NOT take on grunt implementation yourself. Stay aware of who is already on the floor and delegate OPPORTUNISTICALLY: BEFORE you spawn anything, CHECK THE LIVE ROSTER (active agents in registry.json + their state in fleet.json) and prefer routing to an EXISTING agent that fits — above all when the request names one ("ask Pam to…", "have Jim…"), route to that agent instead of reflexively creating a new one. Reuse an idle or already-running agent whose role matches; only spawn a fresh agent when no existing one is a sensible fit, and say that you checked. One capable owner beats a duplicate. (3) OWN ONLY THE IMPORTANT, high-leverage things — task decomposition, dispatch decisions, sign-offs, conflict resolution, branch integration, and final QA — and remain the sole scribe of board.md. You are otherwise fully autonomous — there is NO separate approval queue. For the genuinely critical (destructive actions, spending real money, scope changes, unresolvable conflicts), ask the human directly in your own session and let the tool-permission prompt gate the action; the human approves natively, including remotely from their phone via /remote-control. Keep the team unblocked. When you DISPATCH a task, write it as a 4-part contract so the agent can run autonomously: (1) OBJECTIVE — the concrete goal; (2) OUTPUT — the expected deliverable/format; (3) TOOLS — what to use or avoid, and any references to read instead of re-deriving; (4) BOUNDARIES — scope limits + the definition of done. Pass references (file paths, message ids, board sections), not pasted content — keep dispatches short.'
@@ -2786,7 +2814,11 @@ export class HiveManager {
       cache_read: sample.cacheRead,
       cache_creation: sample.cacheCreation,
       model: sample.model,
-      usd: sample.usd
+      usd: sample.usd,
+      // Optional, additive: the provider's own charge (kept as-is by payroll)
+      // and the reasoning share of `output`. Absent on every older row.
+      ...(sample.usdExact ? { usd_exact: true } : {}),
+      ...(sample.reasoning ? { reasoning: sample.reasoning } : {})
     };
     try { appendFileSync(join(root, 'cost-ledger.jsonl'), JSON.stringify(row) + '\n', 'utf8'); } catch { /* noop */ }
   }
@@ -3072,6 +3104,7 @@ the hive root:
 {
   "objective": "what the worker must do (required)",
   "cwd": "/absolute/path/to/the/repo (required)",
+  "tier": "worker | routine (optional; the engine + model the operator set for that kind of job — see tiers.json)",
   "name": "display name (optional)",
   "command": "engine CLI (optional; overrides the provider default)",
   "provider": "claude | codex | cursor | antigravity | … (optional; selects its default CLI when command is omitted)",
@@ -3089,6 +3122,13 @@ The harness polls that directory, spawns \`worker-<id>\`, and moves the request 
 defaults to true, giving the worker its own git worktree. \`slack\` routes its failures back to a
 thread. This is the ONLY spawn route you can complete on your own: a hire manifest under
 \`research/hires/\` needs the human to confirm it in the UI.
+
+**Pick the tier by the job.** \`tiers.json\` in the hive root holds the operator's current choice of
+engine + model for \`worker\` (implementation, debugging, anything that must be right) and \`routine\`
+(triage, formatting, summaries, look-ups, verification passes). Routine first for mechanical work; if
+that worker fails or says it cannot, re-dispatch ONCE with \`"tier": "worker"\`. Never escalate a
+worker's job onto your own model, and leave \`provider\`/\`model\` out when you set a tier — the tier
+supplies both. An unset tier (empty tiers.json) means the app's defaults apply, exactly as before.
 
 \`character\` and \`accent\` set how the worker looks on the office floor, and both are optional.
 Naming a worker after a cast member already gets you that avatar, so you only need \`character\` when
@@ -3350,13 +3390,27 @@ const AGENT_ID = process.env.AGENT_ID || null;
 const UPSTREAM = process.env.UPSTREAM_BASE_URL || '';
 const SESSION = process.env.HIVE_PROXY_SESSION || null;
 const API = process.env.HIVE_PROXY_API === 'anthropic' ? 'anthropic' : 'openai';
+// Per-spawn tuning the harness asks the proxy to add to each request the CLI
+// does not set itself: a reasoning effort and an output cap (model tiers).
+const EFFORT = process.env.HIVE_PROXY_REASONING || '';
+const MAX_OUT = parseInt(process.env.HIVE_PROXY_MAX_TOKENS || '', 10) || 0;
 
 function trimSlash(s) { while (s.length && s.charAt(s.length - 1) === '/') s = s.slice(0, -1); return s; }
+
+let upstreamUrl = null;
+try { upstreamUrl = new URL(UPSTREAM); } catch (e) {}
+// OpenRouter returns the exact charge for a call when asked (usage.include);
+// the flavor env lets the harness (and the tests) say so without DNS.
+const IS_OPENROUTER = process.env.HIVE_PROXY_FLAVOR === 'openrouter'
+  || !!(upstreamUrl && String(upstreamUrl.hostname).toLowerCase() === 'openrouter.ai');
 
 // Per-model context-window size for the Status gauge; fallback 200k.
 function ctxSize(model) {
   const m = String(model || '').toLowerCase();
   if (m.indexOf('[1m]') !== -1 || m.indexOf('-1m') !== -1) return 1000000;
+  // GPT-6.1 Sol: the usable window is the 272k billing line, past which the
+  // whole request costs double — the gauge should read against THAT.
+  if (m.indexOf('gpt-6.1-sol') !== -1) return 272000;
   if (m.indexOf('claude') !== -1) return 200000;
   if (m.indexOf('gpt-4o') !== -1 || m.indexOf('gpt-4.1') !== -1 || m.indexOf('o1') !== -1 || m.indexOf('o3') !== -1) return 128000;
   if (m.indexOf('qwen') !== -1) return 262144;
@@ -3408,6 +3462,7 @@ function parseAndEmit(bodyStr, isSse) {
   if (!objs.length) { armStop(); return; }
 
   let model = null, input = 0, output = 0, cacheRead = 0, cacheCreation = 0, sawUsage = false;
+  let cost = null, reasoning = 0;
   const toolCalls = [];
   const oaiTools = {}; // accumulate streaming openai tool_calls by index
 
@@ -3449,6 +3504,10 @@ function parseAndEmit(bodyStr, isSse) {
         input += u.prompt_tokens || 0;
         output += u.completion_tokens || 0;
         if (u.prompt_tokens_details && u.prompt_tokens_details.cached_tokens) cacheRead += u.prompt_tokens_details.cached_tokens;
+        if (u.prompt_tokens_details && u.prompt_tokens_details.cache_write_tokens) cacheCreation += u.prompt_tokens_details.cache_write_tokens;
+        if (u.completion_tokens_details && u.completion_tokens_details.reasoning_tokens) reasoning += u.completion_tokens_details.reasoning_tokens;
+        // OpenRouter usage accounting: the dollars actually charged for this call.
+        if (typeof u.cost === 'number' && isFinite(u.cost)) cost = (cost || 0) + u.cost;
         sawUsage = true;
       }
       const choices = o.choices || [];
@@ -3484,7 +3543,10 @@ function parseAndEmit(bodyStr, isSse) {
 
   if (sawUsage) {
     emit({ hook_event_name: 'Status', agent_id: AGENT_ID, context_window: { total_input_tokens: input + cacheRead + cacheCreation, context_window_size: ctxSize(model) } });
-    emit({ hook_event_name: 'CostSample', agent_id: AGENT_ID, session_id: SESSION, model: model, input: input, output: output, cache_read: cacheRead, cache_creation: cacheCreation });
+    const sample = { hook_event_name: 'CostSample', agent_id: AGENT_ID, session_id: SESSION, model: model, input: input, output: output, cache_read: cacheRead, cache_creation: cacheCreation };
+    if (cost !== null) sample.usd = cost;
+    if (reasoning > 0) sample.reasoning = reasoning;
+    emit(sample);
   }
   if (toolCalls.length) {
     cancelStop(); // a tool call means the turn continues
@@ -3496,8 +3558,35 @@ function parseAndEmit(bodyStr, isSse) {
   }
 }
 
-let upstreamUrl = null;
-try { upstreamUrl = new URL(UPSTREAM); } catch (e) {}
+// Add what the CLI did not set itself to a JSON request body: OpenRouter usage
+// accounting (exact cost per call), the tier's reasoning effort, and its output
+// cap. Only fills ABSENT fields — a CLI that chose its own values keeps them.
+// Returns the body to send (rewritten or the original bytes). Exported on
+// module.exports for the unit test; pure.
+function tuneRequestBody(raw, pathname) {
+  if (!IS_OPENROUTER && !EFFORT && !MAX_OUT) return raw;
+  let body;
+  try { body = JSON.parse(raw.toString('utf8')); } catch (e) { return raw; }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return raw;
+  const p = String(pathname || '');
+  const isResponses = p.indexOf('/responses') !== -1;
+  const isChat = p.indexOf('/chat/completions') !== -1 || p.indexOf('/messages') !== -1;
+  if (!isResponses && !isChat) return raw;
+  let changed = false;
+  if (IS_OPENROUTER && body.usage === undefined) { body.usage = { include: true }; changed = true; }
+  if (EFFORT && API === 'openai' && body.reasoning === undefined && body.reasoning_effort === undefined) {
+    // OpenRouter and the Responses API take the object form; a plain
+    // OpenAI-compatible chat endpoint takes the shorthand.
+    if (IS_OPENROUTER || isResponses) body.reasoning = { effort: EFFORT }; else body.reasoning_effort = EFFORT;
+    changed = true;
+  }
+  if (MAX_OUT > 0 && body.max_tokens === undefined && body.max_completion_tokens === undefined && body.max_output_tokens === undefined) {
+    if (isResponses) body.max_output_tokens = MAX_OUT; else body.max_tokens = MAX_OUT;
+    changed = true;
+  }
+  return changed ? Buffer.from(JSON.stringify(body), 'utf8') : raw;
+}
+if (typeof module !== 'undefined') module.exports = { tuneRequestBody: tuneRequestBody, ctxSize: ctxSize };
 
 const server = http.createServer(function (req, res) {
   cancelStop(); // a new request means the turn is still going
@@ -3519,7 +3608,20 @@ const server = http.createServer(function (req, res) {
     path: target.pathname + target.search,
     headers: headers
   };
-  const upReq = lib.request(opts, function (upRes) {
+  // A JSON POST is buffered so the tuning above can fill in absent fields; the
+  // rewritten bytes get a fresh content-length. Anything else streams through.
+  const ct = String(req.headers['content-type'] || '');
+  const tune = (IS_OPENROUTER || EFFORT || MAX_OUT) && req.method === 'POST' && ct.indexOf('json') !== -1;
+  const forward = function (bodyBuf) {
+    if (bodyBuf) {
+      headers['content-length'] = String(bodyBuf.length);
+      delete headers['transfer-encoding'];
+    }
+    const upReq = lib.request(opts, onUpstream);
+    upReq.on('error', function () { try { res.statusCode = 502; res.end('proxy: upstream error'); } catch (e) {} });
+    if (bodyBuf) upReq.end(bodyBuf); else req.pipe(upReq);
+  };
+  const onUpstream = function (upRes) {
     res.writeHead(upRes.statusCode || 502, upRes.headers);
     const ct = String((upRes.headers['content-type'] || ''));
     const wantParse = ct.indexOf('json') !== -1 || ct.indexOf('event-stream') !== -1;
@@ -3537,11 +3639,20 @@ const server = http.createServer(function (req, res) {
       }
     });
     upRes.on('error', function () { try { res.end(); } catch (e) {} });
-  });
-  upReq.on('error', function () { try { res.statusCode = 502; res.end('proxy: upstream error'); } catch (e) {} });
-  req.pipe(upReq);
+  };
+  if (tune) {
+    const parts = [];
+    req.on('data', function (c) { parts.push(c); });
+    req.on('end', function () { forward(tuneRequestBody(Buffer.concat(parts), target.pathname)); });
+    req.on('error', function () { try { res.statusCode = 502; res.end('proxy: request error'); } catch (e) {} });
+  } else {
+    forward(null);
+  }
 });
 
+// Under the unit test the file is require()d for its pure helpers; only a real
+// sidecar run (UPSTREAM set, not required) binds a port.
+if (require.main === module) {
 server.on('error', function () {
   try { process.stdout.write(JSON.stringify({ port: 0 }) + '\\n'); } catch (e) {}
   process.exit(0);
@@ -3551,6 +3662,7 @@ server.listen(0, '127.0.0.1', function () {
   const port = (addr && typeof addr === 'object') ? addr.port : 0;
   try { process.stdout.write(JSON.stringify({ port: port }) + '\\n'); } catch (e) {}
 });
+}
 `;
 
 // Official Gemini CLI bridge. Gemini already sends snake_case payload fields;

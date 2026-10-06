@@ -20,6 +20,13 @@ export interface ModelPrice {
   outputPerM: number;
   cacheReadPerM: number;
   cacheWritePerM: number;
+  /** Some models re-price the WHOLE request once its input passes a line
+   *  (GPT-6.1 Sol: 272k → 2× input and cache, 1.5× output). */
+  longContext?: { thresholdTokens: number; inputMult: number; outputMult: number };
+  /** The rate depends on which upstream a router picks per call (OpenRouter's
+   *  DeepSeek routes span a 3× range), so a figure from this row is an
+   *  estimate. Exact costs come from the provider's own usage report. */
+  variable?: boolean;
 }
 
 // Anthropic list prices, USD per million tokens. Approximate, fallback-only —
@@ -42,9 +49,22 @@ const P = (inputPerM: number, outputPerM: number, cacheReadPerM = inputPerM / 10
  *  published rates at the time of writing and the owner can override any of
  *  them in Settings (modelPriceOverrides). First match wins, so the more
  *  specific entries come first. */
+/** GPT-6.1 Sol on OpenRouter: $2 in, $10 out, $0.10 cached read, $2.50 cache
+ *  write; past 272k input tokens the whole request bills 2× in / 1.5× out. The
+ *  Pro variant costs the same per token and spends several times more reasoning
+ *  tokens per request, which is why the suggested tiers never pick it. */
+const GPT61_SOL: ModelPrice = {
+  ...P(2.00, 10.00, 0.10, 2.50),
+  longContext: { thresholdTokens: 272_000, inputMult: 2, outputMult: 1.5 }
+};
+
 const OTHER_PRICES: Array<[RegExp, ModelPrice]> = [
-  // DeepSeek (OpenRouter / direct)
-  [/deepseek-v4\.1-flash|deepseek-v4-1-flash/, P(0.03, 2.40, 0.003)],
+  // OpenAI GPT-6.1 Sol (OpenRouter). Both ids share one row; see GPT61_SOL.
+  [/gpt-6\.1-sol/, GPT61_SOL],
+  // DeepSeek (OpenRouter / direct). V4.1 Flash's rate depends on the upstream
+  // OpenRouter routes to (about $0.05–0.15 in, $0.31–0.60 out); DeepSeek's own
+  // list price is the conservative figure here, flagged variable.
+  [/deepseek-v4\.1-flash|deepseek-v4-1-flash/, { ...P(0.15, 0.60, 0.015), variable: true }],
   [/deepseek-v4-flash/, P(0.0152, 1.28, 0.0015)],
   [/deepseek-v4-pro|deepseek-v4$/, P(0.19, 4.20, 0.019)],
   [/deepseek-r1/, P(0.55, 2.19, 0.14)],
@@ -89,6 +109,8 @@ export interface PriceInfo {
   local: boolean;
   /** An Anthropic model. */
   claude: boolean;
+  /** The row is a per-call-varying estimate (see ModelPrice.variable). */
+  variable: boolean;
 }
 
 /** Owner overrides from Settings: one per line, `model-id input output [cacheRead cacheWrite]`
@@ -128,20 +150,37 @@ export function priceInfo(model: string | undefined | null): PriceInfo {
   const claude = norm.includes('claude') || norm.includes('opus') || norm.includes('sonnet') || norm.includes('haiku');
   const local = /^(local|ollama|lmstudio|lm-studio)\//.test(norm) || norm.includes('localhost');
   for (const [id, price] of overrides) {
-    if (norm.includes(id)) return { price, known: true, local, claude };
+    if (norm.includes(id)) return { price, known: true, local, claude, variable: false };
   }
-  if (local) return { price: FREE, known: true, local: true, claude: false };
+  if (local) return { price: FREE, known: true, local: true, claude: false, variable: false };
   if (claude) {
-    if (norm.includes('opus')) return { price: OPUS, known: true, local: false, claude: true };
-    if (norm.includes('haiku')) return { price: HAIKU, known: true, local: false, claude: true };
-    if (norm.includes('sonnet')) return { price: SONNET, known: true, local: false, claude: true };
-    return { price: DEFAULT_CLAUDE_PRICE, known: false, local: false, claude: true };
+    if (norm.includes('opus')) return { price: OPUS, known: true, local: false, claude: true, variable: false };
+    if (norm.includes('haiku')) return { price: HAIKU, known: true, local: false, claude: true, variable: false };
+    if (norm.includes('sonnet')) return { price: SONNET, known: true, local: false, claude: true, variable: false };
+    return { price: DEFAULT_CLAUDE_PRICE, known: false, local: false, claude: true, variable: false };
   }
   const bare = bareModel(norm);
   for (const [re, price] of OTHER_PRICES) {
-    if (re.test(bare) || re.test(norm)) return { price, known: true, local: false, claude: false };
+    if (re.test(bare) || re.test(norm)) return { price, known: true, local: false, claude: false, variable: price.variable === true };
   }
-  return { price: FREE, known: false, local: false, claude: false };
+  return { price: FREE, known: false, local: false, claude: false, variable: false };
+}
+
+/** USD for one request's tokens at a price row, long-context rule included:
+ *  the rule keys on the request's whole input (fresh + cached + newly cached),
+ *  which is what the provider counts against the line. */
+export function costFromPrice(p: ModelPrice, tokens: TokenSplit): number {
+  let inMult = 1, outMult = 1;
+  const lc = p.longContext;
+  if (lc && tokens.inputTokens + tokens.cacheReadTokens + tokens.cacheWriteTokens > lc.thresholdTokens) {
+    inMult = lc.inputMult; outMult = lc.outputMult;
+  }
+  return (
+    (tokens.inputTokens / 1_000_000) * p.inputPerM * inMult +
+    (tokens.outputTokens / 1_000_000) * p.outputPerM * outMult +
+    (tokens.cacheReadTokens / 1_000_000) * p.cacheReadPerM * inMult +
+    (tokens.cacheWriteTokens / 1_000_000) * p.cacheWritePerM * inMult
+  );
 }
 
 /**
@@ -173,11 +212,5 @@ export interface TokenSplit {
  * Used only by the transcript reconciler; the live path trusts Claude's cost.
  */
 export function estimateCostUsd(model: string | undefined | null, tokens: TokenSplit): number {
-  const p = priceFor(model);
-  return (
-    (tokens.inputTokens / 1_000_000) * p.inputPerM +
-    (tokens.outputTokens / 1_000_000) * p.outputPerM +
-    (tokens.cacheReadTokens / 1_000_000) * p.cacheReadPerM +
-    (tokens.cacheWriteTokens / 1_000_000) * p.cacheWritePerM
-  );
+  return costFromPrice(priceFor(model), tokens);
 }

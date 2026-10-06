@@ -29,7 +29,8 @@ test('Claude families keep their rates; an unknown Claude id falls back to Sonne
 test('cheap engines are priced by family, with routing prefixes stripped; local models are free', () => {
   const ds = pricing.priceInfo('openrouter/deepseek/deepseek-v4-pro-0813');
   assert.deepEqual([ds.known, ds.claude, ds.price.inputPerM, ds.price.outputPerM], [true, false, 0.19, 4.2]);
-  assert.equal(pricing.priceInfo('openrouter/deepseek/deepseek-v4.1-flash').price.outputPerM, 2.4);
+  assert.equal(pricing.priceInfo('openrouter/deepseek/deepseek-v4.1-flash').price.outputPerM, 0.6);
+  assert.equal(pricing.priceInfo('openrouter/deepseek/deepseek-v4.1-flash').variable, true, 'a router-dependent rate is flagged as an estimate');
   assert.equal(pricing.priceInfo('groq/llama-3.3-70b-versatile').price.inputPerM, 0.59);
   assert.equal(pricing.priceInfo('google/gemini-2.5-flash').price.inputPerM, 0.3);
   assert.equal(pricing.priceInfo('flash').price.inputPerM, 0.3, 'the Gemini CLI alias');

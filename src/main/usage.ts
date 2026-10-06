@@ -50,6 +50,11 @@ export interface AgentUsageSample {
   /** Claude-precomputed cost (live path) / transcript-fallback estimate (interim).
    *  Never recomputed by a consumer. */
   usd: number;
+  /** `usd` is the provider's own charge (OpenRouter usage accounting, OpenCode's
+   *  cost field) — payroll keeps it instead of re-pricing from tokens. */
+  usdExact?: boolean;
+  /** Reasoning tokens inside `output`, when the provider reports them. */
+  reasoning?: number;
 }
 
 /** The seam both backends implement. */

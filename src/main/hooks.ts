@@ -19,6 +19,7 @@ import type { HarnessConfig } from './config';
 import type { ControlRegistry } from './control';
 import type { CircuitBreaker } from './breaker';
 import { estimateCostUsd } from './pricing';
+import type { AgentUsageSample } from './usage';
 import { validateHookEvent } from '../shared/hookEvents';
 
 /** Maximum JSON payload bytes in one newline-delimited hook frame. */
@@ -50,6 +51,39 @@ interface HookPayload {
   output?: number;
   cache_read?: number;
   cache_creation?: number;
+  /** The provider's own charge for the response (OpenRouter usage accounting).
+   *  Present → authoritative; absent → the ledger estimates from the table. */
+  usd?: number;
+  reasoning?: number;
+}
+
+/** One ledger row from a proxy CostSample. Pure (exported for the tests): the
+ *  provider's own dollar figure wins when it is there, else the price table. */
+export function costSampleRow(agentId: string, p: HookPayload, now: number = Date.now()): AgentUsageSample {
+  const input = p.input ?? 0;
+  const output = p.output ?? 0;
+  const cacheRead = p.cache_read ?? 0;
+  const cacheCreation = p.cache_creation ?? 0;
+  const exact = typeof p.usd === 'number' && Number.isFinite(p.usd) && p.usd >= 0;
+  const reasoning = typeof p.reasoning === 'number' && p.reasoning > 0 ? p.reasoning : undefined;
+  return {
+    agentId,
+    sessionId: p.session_id ?? '',
+    ts: now,
+    input,
+    output,
+    cacheRead,
+    cacheCreation,
+    model: p.model ?? '',
+    usd: exact ? p.usd as number : estimateCostUsd(p.model, {
+      inputTokens: input,
+      outputTokens: output,
+      cacheReadTokens: cacheRead,
+      cacheWriteTokens: cacheCreation
+    }),
+    ...(exact ? { usdExact: true } : {}),
+    ...(reasoning ? { reasoning } : {})
+  };
 }
 
 /** Live health of the hook socket — the ONE endpoint every lifecycle hook,
@@ -437,28 +471,7 @@ export class HookServer {
     // per-model estimate (a local model normally costs ~$0, but the row keeps the
     // accounting schema uniform). Pure telemetry — never feeds the loop detector.
     if (event === 'CostSample') {
-      if (agentId && p.session_id) {
-        const input = p.input ?? 0;
-        const output = p.output ?? 0;
-        const cacheRead = p.cache_read ?? 0;
-        const cacheCreation = p.cache_creation ?? 0;
-        this.hive.appendCostLedger({
-          agentId,
-          sessionId: p.session_id,
-          ts: Date.now(),
-          input,
-          output,
-          cacheRead,
-          cacheCreation,
-          model: p.model ?? '',
-          usd: estimateCostUsd(p.model, {
-            inputTokens: input,
-            outputTokens: output,
-            cacheReadTokens: cacheRead,
-            cacheWriteTokens: cacheCreation
-          })
-        });
-      }
+      if (agentId && p.session_id) this.hive.appendCostLedger(costSampleRow(agentId, p));
       return {};
     }
 

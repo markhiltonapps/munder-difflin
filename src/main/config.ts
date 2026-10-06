@@ -10,6 +10,7 @@ import {
   type AgentProvider
 } from '../shared/agentProvider';
 import { defaultMcpDefaults } from '../shared/mcpCatalog';
+import { normalizeTiers, type ModelTiers } from '../shared/modelTiers';
 import { MAX_AGENT_TOKEN_CAP } from '../shared/tokenCaps';
 import { expandTilde, normalizeHiveHome } from './fs';
 import type { IntegrationRecord } from '../shared/integrations';
@@ -240,6 +241,12 @@ export interface HarnessConfig {
   /** Payroll price overrides: one per line, `model-id input output [cacheRead cacheWrite]`
    *  in USD per million tokens, matched by substring. Empty = built-in table. */
   modelPriceOverrides?: string;
+  /** Model tiers: which engine + model (+ reasoning effort, output cap) runs the
+   *  `worker` jobs and which the `routine` jobs. Michael's spawn requests and the
+   *  Hire dialog pick from these; OpenCode/Qwen spawns receive the effort and
+   *  output cap. UNSET tiers change nothing (the Claude role defaults apply), so
+   *  an upgrade is silent until the owner fills them in Settings → AI Engines. */
+  modelTiers?: ModelTiers;
   /** Hard TOKEN ceiling (total tokens across all active agents) before the
    *  breaker trips. The user-facing budget — set in Settings. Opt-in like the
    *  $-cap; total = input + output + cacheRead + cacheCreation, summed across the
@@ -713,6 +720,12 @@ function persistConfig(next: HarnessConfig): HarnessConfig {
 export function writeConfig(patch: Partial<HarnessConfig>): HarnessConfig {
   const current = readConfig();
   const next: HarnessConfig = { ...current, ...patch };
+  // Model tiers come from a settings form or a voice action: keep only tiers
+  // with a known engine and a clean model slug (they end up on a command line).
+  if ('modelTiers' in patch) {
+    const tiers = normalizeTiers(patch.modelTiers);
+    if (Object.keys(tiers).length) next.modelTiers = tiers; else delete next.modelTiers;
+  }
   // Project INGESTION — a registered repo is typed by hand ("~/dev/foo") as often
   // as it is picked from the folder dialog. Expand `~` here so the persisted list
   // (and therefore every agent's default cwd) is ABSOLUTE; Node's fs/spawn treat

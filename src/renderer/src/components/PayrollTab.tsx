@@ -136,6 +136,7 @@ export function PayrollTab() {
                     {nameOf(a.agentId)}
                     {a.claude && <span title={t('payroll.apiEquivalent')} style={{ marginInlineStart: 6, fontSize: 10, color: 'var(--cth-ink-500)' }}>{t('payroll.apiEqTag')}</span>}
                     {a.unknownPrice && <span title={t('payroll.unknownPrice')} style={{ marginInlineStart: 6, fontSize: 10, color: '#6E1423' }}>{t('payroll.unknownTag')}</span>}
+                    {a.variablePrice && <span title={t('payroll.variablePrice')} style={{ marginInlineStart: 6, fontSize: 10, color: 'var(--cth-ink-500)' }}>{t('payroll.variableTag')}</span>}
                     {notMetered(a.agentId) && <span title={t('payroll.notMetered')} style={{ marginInlineStart: 6, fontSize: 10, color: 'var(--cth-ink-500)' }}>{t('payroll.notMeteredTag')}</span>}
                   </td>
                   <td style={{ ...td, textAlign: 'start' }} title={a.models.join('\n')}>{shortModelLabel(modelOf(a))}{a.models.length > 1 ? ` +${a.models.length - 1}` : ''}</td>

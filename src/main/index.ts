@@ -77,6 +77,11 @@ import * as integrations from './integrations';
 import { validateBaseUrl, buildAuthHeaders, resolveUpstreamUrl, secretRefFor, INTEGRATION_TEMPLATES } from '../shared/integrations';
 import { RosterStore } from './roster';
 import { buildWorkerLaunch } from './workerLaunch';
+import { probeOpenRouter, type ProbeSpec } from './openrouter';
+import {
+  isOpenRouterModel, isOpenRouterUrl, knownContextBudget, normalizeTierName, openRouterModelId,
+  tierMatching, OPENROUTER_BASE_URL, type ModelTier
+} from '../shared/modelTiers';
 import { ControlRegistry } from './control';
 import { WorkerWakeWatchdog, WORKER_WAKE_REPORT_MS, activityEvidenceAt, type WorkerWakeFacts } from './workerWake';
 import { inboxNudgeText } from '../shared/hiveNudge';
@@ -418,6 +423,22 @@ const BACKEND_KEY_ENV: Record<string, string> = {
   groq: 'GROQ_API_KEY'
 };
 const providerKeyRef = (backend: string): string => `apikey:${backend}`;
+
+/** Where a backend's key comes from: the encrypted store set in Settings, else
+ *  the standard environment variable the app was launched with (an operator
+ *  who keeps OPENROUTER_API_KEY in their shell profile never has to paste it).
+ *  The key itself never leaves main. */
+function backendKeySource(backend: string): 'settings' | 'env' | null {
+  if (integrations.hasSecret(providerKeyRef(backend))) return 'settings';
+  const envName = BACKEND_KEY_ENV[backend];
+  return envName && process.env[envName]?.trim() ? 'env' : null;
+}
+function backendKey(backend: string): string {
+  const stored = integrations.getSecret(providerKeyRef(backend));
+  if (stored) return stored;
+  const envName = BACKEND_KEY_ENV[backend];
+  return (envName && process.env[envName]?.trim()) || '';
+}
 
 /** A worker worktree that teardown PRESERVED because it held unintegrated work.
  *  Tracked so the GC sweep can reclaim it (+ its scratch dir) once the work lands
@@ -2877,9 +2898,17 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
   // proxy forwards to their endpoint (Ollama/LM Studio/vLLM). Set on process.env BEFORE
   // ensureAgent reads it. (Crush's baseUrlEnv is an inert sentinel used ONLY as this
   // upstream source; its real routing is the per-agent CRUSH_GLOBAL_CONFIG base_url.)
+  // The tier whose engine + model this spawn runs on, if any: its effort and
+  // output cap ride to the proxy sidecar (qwen/crush) via ensureAgent below.
+  let spawnTier: ModelTier | undefined;
   if (opts.hive && (provider === 'crush' || provider === 'qwen')) {
     const bridge = providerPreset(provider).bridge;
-    const baseUrl = readConfig().providerBaseUrls?.[provider];
+    const cfgNow = readConfig();
+    const mi = (opts.args ?? []).indexOf('--model');
+    const slug = mi >= 0 ? (opts.args?.[mi + 1] ?? '') : '';
+    spawnTier = tierMatching(cfgNow.modelTiers, provider, slug);
+    // An `openrouter/…` slug means OpenRouter even with no base URL configured.
+    const baseUrl = cfgNow.providerBaseUrls?.[provider] || (isOpenRouterModel(slug) ? OPENROUTER_BASE_URL : undefined);
     if (bridge && bridge.kind === 'proxy' && baseUrl) process.env[bridge.baseUrlEnv] = baseUrl;
   }
   // If the agent carries hive metadata, provision its workspace and add
@@ -2907,7 +2936,8 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
           skillsDir: skillsResourceDir(),
           // The shared palace is mutated by the agent's own `mempalace` calls, so
           // the OS sandbox must let it through (empty when memory is off).
-          extraWritableDirs: [memory.env().MEMPALACE_PALACE_PATH].filter((p): p is string => !!p)
+          extraWritableDirs: [memory.env().MEMPALACE_PALACE_PATH].filter((p): p is string => !!p),
+          proxyTuning: spawnTier ? { effort: spawnTier.effort, maxOutputTokens: spawnTier.maxOutputTokens } : undefined
         }
       );
       opts.args = [...(opts.args ?? []), ...inj.args];
@@ -3097,7 +3127,7 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
     const scoped = PREFIX_BACKEND[prefix];
     const backends = scoped ? [scoped] : Object.keys(BACKEND_KEY_ENV);
     for (const backend of backends) {
-      const key = integrations.getSecret(providerKeyRef(backend));
+      const key = backendKey(backend);
       if (!key) continue;
       extra[BACKEND_KEY_ENV[backend]] = key;
       // OpenCode/AI-SDK's Google provider reads GOOGLE_GENERATIVE_AI_API_KEY, not
@@ -3123,7 +3153,39 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
           local: { npm: '@ai-sdk/openai-compatible', name: 'Local (self-hosted)', options: { baseURL: baseUrl }, models: { [localModel]: { name: localModel } } }
         };
       }
+      // Model tiers: an OpenRouter model that is one of the configured tiers
+      // gets that tier's reasoning effort (OpenCode passes `reasoning.effort`
+      // through to OpenRouter) and, where the window is a known billing line,
+      // a context limit so OpenCode compacts BEFORE the price doubles.
+      const tier = tierMatching(cfg.modelTiers, 'opencode', modelSlug);
+      if (tier && isOpenRouterModel(modelSlug)) {
+        const entry: Record<string, unknown> = {};
+        if (tier.effort) entry.options = { reasoning: { effort: tier.effort } };
+        const context = knownContextBudget(modelSlug);
+        if (context && tier.maxOutputTokens) entry.limit = { context, output: tier.maxOutputTokens };
+        if (Object.keys(entry).length) {
+          const providers = (oc.provider as Record<string, unknown> | undefined) ?? {};
+          providers.openrouter = { models: { [openRouterModelId(modelSlug)]: entry } };
+          oc.provider = providers;
+        }
+      }
       extra.OPENCODE_CONFIG_CONTENT = JSON.stringify(oc);
+    }
+    // Qwen Code speaks plain OpenAI-compatible: when its upstream is OpenRouter
+    // (the Settings base URL, or an `openrouter/…` model slug), it needs the
+    // OpenRouter key under the OpenAI name it reads, and OpenRouter's own model
+    // id. The proxy sidecar (ensureAgent) carries the tier's effort and cap.
+    if (provider === 'qwen') {
+      const viaOpenRouter = isOpenRouterUrl(cfg.providerBaseUrls?.qwen) || isOpenRouterModel(modelSlug);
+      if (viaOpenRouter) {
+        const key = backendKey('openrouter');
+        if (key) extra.OPENAI_API_KEY = key;
+        if (modelSlug) {
+          const id = openRouterModelId(modelSlug);
+          extra.OPENAI_MODEL = id;
+          if (modelIdx >= 0 && opts.args) opts.args[modelIdx + 1] = id;
+        }
+      }
     }
     // OpenCode keeps its sessions in a SQLite file; one per agent, inside the
     // agent's hive folder, so the engine meter can read that agent's usage
@@ -3282,6 +3344,33 @@ ipcMain.handle('providerKey:clear', (_evt, backend: unknown) => {
   if (typeof backend !== 'string' || !(backend in BACKEND_KEY_ENV)) return { ok: false, error: 'unknown backend' };
   try { integrations.deleteSecret(providerKeyRef(backend)); return { ok: true }; }
   catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) }; }
+});
+/** Presence AND origin of a backend key ('settings' | 'env' | null) — so Settings
+ *  can say "from environment" for a key the app found rather than was given. */
+ipcMain.handle('providerKey:source', (_evt, backend: unknown) =>
+  typeof backend === 'string' && backend in BACKEND_KEY_ENV ? backendKeySource(backend) : null);
+/** Test connection: one short real call per configured model tier (plus any
+ *  extra ids the owner typed), returning tokens and the exact cost OpenRouter
+ *  reports. Small by construction (60-token cap, sequential, at most 6). */
+ipcMain.handle('openrouter:probe', async (_evt, extra: unknown) => {
+  const key = backendKey('openrouter');
+  if (!key) return { ok: false, error: 'no OpenRouter key: add one above or set OPENROUTER_API_KEY' };
+  const cfg = readConfig();
+  const specs: ProbeSpec[] = [];
+  for (const name of ['worker', 'routine'] as const) {
+    const t = cfg.modelTiers?.[name];
+    if (t && isOpenRouterModel(t.model)) specs.push({ label: name, model: openRouterModelId(t.model), effort: t.effort });
+  }
+  if (Array.isArray(extra)) {
+    for (const m of extra.slice(0, 4)) {
+      if (typeof m === 'string' && /^[A-Za-z0-9._:\/-]{3,120}$/.test(m.trim())) {
+        const id = openRouterModelId(m.trim());
+        if (!specs.some((sp) => sp.model === id)) specs.push({ label: id, model: id });
+      }
+    }
+  }
+  if (!specs.length) return { ok: false, error: 'nothing to test: set an OpenRouter model on a tier, or type a model id' };
+  return { ok: true, results: await probeOpenRouter(key, specs) };
 });
 // Probe an integration's reachability through the broker's own auth path (admin-only;
 // runs in main, so the secret is used but never returned — only the upstream status).
@@ -4996,6 +5085,7 @@ interface SpawnRequest {
   command?: string;                                   // engine CLI; default = config.defaultCommand
   provider?: AgentProvider;                           // optional explicit provider
   model?: string;                                     // optional --model override (Claude)
+  tier?: 'worker' | 'routine';                        // optional model tier (Settings → AI Engines)
   cwd?: string;                                        // repo the worker (and its worktree) runs in
   name?: string;                                       // display name
   slack?: { channel: string; thread_ts: string };     // reply target + where failures surface
@@ -5120,12 +5210,17 @@ async function processSpawnRequest(filePath: string): Promise<void> {
   // model-flag dedupe). Pure and unit-tested — see workerLaunch.ts for why this
   // translation earned a test.
   const cfgSpawn = readConfig();
+  // A tier names the engine + model the operator chose for that kind of job.
+  // Unknown tier name or unset tier → the request's own fields / defaults.
+  const tierName = normalizeTierName(raw.tier);
+  const tier = tierName ? cfgSpawn.modelTiers?.[tierName] : undefined;
   const launch = buildWorkerLaunch({
     requestCommand: raw.command,
     requestProvider: raw.provider,
     requestModel: raw.model,
     defaultCommand: cfgSpawn.defaultCommand,
-    autoMode: !!cfgSpawn.autoMode
+    autoMode: !!cfgSpawn.autoMode,
+    tier
   });
   const bin = launch.bin;
   // Validate the executable name on the spawn path. A spawn-request file is
@@ -5147,10 +5242,13 @@ async function processSpawnRequest(filePath: string): Promise<void> {
   let baseBranch = 'main';
   try { const br = await getBranch(cwd); if ('current' in br && br.current) baseBranch = br.current; } catch { /* keep default */ }
 
+  // The engine the launch actually resolved to (request → tier → default), so
+  // the roster, payroll and spawn injection all agree on it.
+  const workerProvider = raw.provider ?? (tier && !raw.command ? tier.provider : undefined);
   const meta: AgentMeta = {
     id: workerId,
     name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : `Worker ${reqId.slice(0, 12)}`,
-    provider: raw.provider,
+    provider: workerProvider,
     role: 'worker',
     cwd
   };
@@ -5168,7 +5266,7 @@ async function processSpawnRequest(filePath: string): Promise<void> {
   const spawnOpts: AgentSpawnOptions = {
     id: workerId, cwd, command: bin, cols: 120, rows: 32,
     args: launch.args,
-    hive: meta, isolate, provider: raw.provider, env: brokerEnv
+    hive: meta, isolate, provider: workerProvider, env: brokerEnv
   };
 
   let res: { ok: boolean; error?: string; worktreePath?: string };
@@ -5505,10 +5603,26 @@ ipcMain.handle('workers:stop', (_evt, workerId: string): { ok: boolean; error?: 
 /** Start every hive-bound background service against the current harnessHome.
  *  Called on boot, and again to recover in place if a folder-change copy fails
  *  (config:changeHome tears these down before copying). No-op without a home. */
+/** `<hive>/tiers.json` — the model tiers as the orchestrator reads them. The
+ *  prompt only says "read tiers.json" (so it stays prompt-cache-stable); the
+ *  values live here and follow every Settings save. */
+function syncTiersFile(): void {
+  const root = hive.root();
+  if (!root) return;
+  const tiers = readConfig().modelTiers ?? {};
+  const doc = {
+    _comment: 'Model tiers set by the operator in Settings → AI Engines. Put "tier": "worker" or "routine" on a spawn request to use one. Empty = app defaults.',
+    worker: tiers.worker ?? null,
+    routine: tiers.routine ?? null
+  };
+  try { writeFileSync(join(root, 'tiers.json'), JSON.stringify(doc, null, 2), 'utf8'); } catch { /* best-effort */ }
+}
+
 function bootstrapHiveServices(): void {
   if (!hive.enabled()) return;
   hive.ensureHive();
   hive.refreshGeneratedDocs();
+  syncTiersFile();
   // Tell the hive what it is running inside, BEFORE anything spawns: the prompt
   // builder reads this, so an agent spawned earlier would never learn it.
   hive.setRuntimeInfo({ version: app.getVersion(), packaged: app.isPackaged, appPath: app.getAppPath() });
@@ -5881,6 +5995,8 @@ onConfigWritten((config) => {
   // The payroll's price table follows the owner's overrides the moment they save.
   setPriceOverrides(config.modelPriceOverrides);
   payrollService.invalidate();
+  // The orchestrator reads tiers from the hive, not from config: keep them in step.
+  syncTiersFile();
   for (const w of allWindows) {
     if (w.isDestroyed() || w.webContents.isDestroyed()) continue;
     w.webContents.send('config:changed', config);

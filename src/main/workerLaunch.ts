@@ -11,6 +11,7 @@ import {
   normalizeAgentProvider
 } from '../shared/agentProvider';
 import { tokenizeCommand } from '../shared/commandLine';
+import type { ModelTier } from '../shared/modelTiers';
 
 export interface WorkerLaunch {
   /** The executable name alone — what the PTY layer resolves and spawns. */
@@ -30,12 +31,17 @@ export function buildWorkerLaunch(opts: {
   defaultCommand?: string;
   /** The app's auto (skip-permissions) setting. */
   autoMode: boolean;
+  /** The model tier the request named (already resolved from config), if any.
+   *  Fills in the engine and model the request left unset; an explicit
+   *  command, provider or model in the request still wins over it. */
+  tier?: ModelTier;
 }): WorkerLaunch {
   const requestCommand =
     typeof opts.requestCommand === 'string' && opts.requestCommand.trim()
       ? opts.requestCommand.trim()
       : '';
-  const requestProvider = normalizeAgentProvider(opts.requestProvider);
+  const requestProvider = normalizeAgentProvider(opts.requestProvider)
+    ?? (!requestCommand ? opts.tier?.provider : undefined);
   const fallbackCommand = opts.defaultCommand ?? 'claude';
   // An explicit command may be a wrapper or shim and remains authoritative.
   // Without one, keep the executable and provider behavior coherent by taking
@@ -71,7 +77,8 @@ export function buildWorkerLaunch(opts: {
   // model itself (spawnAgentCore likewise skips its default-model injection
   // when argv already carries --model).
   const model =
-    typeof opts.requestModel === 'string' && opts.requestModel.trim() ? opts.requestModel.trim() : '';
+    (typeof opts.requestModel === 'string' && opts.requestModel.trim() ? opts.requestModel.trim() : '')
+    || (opts.tier && provider === opts.tier.provider ? opts.tier.model : '');
   const args = [...flags, ...(model && !flags.includes('--model') ? ['--model', model] : [])];
   return { bin, args, command };
 }

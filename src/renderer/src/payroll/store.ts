@@ -46,6 +46,11 @@ export function agentPayroll(id: string): PayrollAgent | null {
 export interface PayrollLabels {
   today: string; week: string; month: string; all: string;
   apiEq: string; unknown: string; notMetered: string; noUsageYet: string;
+  /** "cached re-reads" — the share of tokens that were the model re-reading
+   *  its own context from cache (a tool-heavy session is mostly this). */
+  cached?: string;
+  /** Some usage priced from a per-call-varying table row (an estimate). */
+  variable?: string;
 }
 
 /** What the roster says the agent runs on. The ledger only knows the model of
@@ -67,7 +72,13 @@ export function payrollLineFor(a: PayrollAgent | null, labels: PayrollLabels, co
   const t = a.windows.today;
   const line = `${label} · ${fmtTokens(t.tokens)} tok · ${fmtUsd(t.usd)} ${labels.today}`;
   const rows = (['today', 'week', 'month', 'all'] as const).map((w) => `${labels[w]}: ${fmtTokens(a.windows[w].tokens)} tokens, ${fmtUsd(a.windows[w].usd)}`);
-  const notes = [a.claude ? labels.apiEq : '', a.unknownPrice ? labels.unknown : ''].filter(Boolean);
+  // Where a big token count comes from: every request re-sends the whole
+  // context, mostly as cheap cache reads. Saying so stops "13M tokens for two
+  // questions" from reading like a fault.
+  if (labels.cached && t.tokens > 0 && t.cacheRead > 0) {
+    rows.push(`${labels.cached}: ${fmtTokens(t.cacheRead)} (${Math.round((t.cacheRead / t.tokens) * 100)}%) ${labels.today}`);
+  }
+  const notes = [a.claude ? labels.apiEq : '', a.unknownPrice ? labels.unknown : '', a.variablePrice && labels.variable ? labels.variable : ''].filter(Boolean);
   return { line, title: [...rows, ...notes].join('\n') };
 }
 

@@ -27,7 +27,8 @@ export function AgentStrip({ config }: AgentStripProps) {
     const labels = {
       today: t('payroll.today'), week: t('payroll.week'), month: t('payroll.month'), all: t('payroll.all'),
       apiEq: t('payroll.apiEquivalent'), unknown: t('payroll.unknownPrice'),
-      notMetered: t('payroll.notMetered'), noUsageYet: t('payroll.noUsageYet')
+      notMetered: t('payroll.notMetered'), noUsageYet: t('payroll.noUsageYet'),
+      cached: t('payroll.cachedReads'), variable: t('payroll.variablePrice')
     };
     const out: Record<string, { line: string; title: string }> = {};
     if (!payrollState.loaded) return out;

@@ -16,7 +16,7 @@
  * A model with no price on file counts zero and is reported as unknown.
  */
 import { readFile, stat } from 'node:fs/promises';
-import { normalizeModel, priceInfo } from './pricing';
+import { costFromPrice, normalizeModel, priceInfo } from './pricing';
 import {
   addTotals, emptyWindows, zeroTotals,
   type PayrollAgent, type PayrollSummary, type PayrollTotals, type PayrollWindow
@@ -26,6 +26,8 @@ interface Row {
   agent_id: string; session_id: string | null; ts: number;
   input: number; output: number; cache_read: number; cache_creation: number;
   model: string | null; usd: number;
+  /** The provider's own charge: never re-priced from tokens. */
+  usd_exact?: boolean;
 }
 
 const EPS = 1e-9;
@@ -46,7 +48,8 @@ function parseRow(line: string): Row | null {
       agent_id: r.agent_id, session_id: typeof r.session_id === 'string' ? r.session_id : null, ts: r.ts,
       input: Number(r.input) || 0, output: Number(r.output) || 0,
       cache_read: Number(r.cache_read) || 0, cache_creation: Number(r.cache_creation) || 0,
-      model: typeof r.model === 'string' && r.model ? r.model : null, usd: Number(r.usd) || 0
+      model: typeof r.model === 'string' && r.model ? r.model : null, usd: Number(r.usd) || 0,
+      ...(r.usd_exact === true ? { usd_exact: true } : {})
     };
   } catch {
     return null;
@@ -76,7 +79,7 @@ export function foldPayroll(text: string, clock: FoldClock): PayrollSummary {
   const agentOf = (id: string): PayrollAgent => {
     let a = agents.get(id);
     if (!a) {
-      a = { agentId: id, model: null, models: [], windows: emptyWindows(), unknownPrice: false, claude: false, lastTs: 0 };
+      a = { agentId: id, model: null, models: [], windows: emptyWindows(), unknownPrice: false, variablePrice: false, claude: false, lastTs: 0 };
       agents.set(id, a);
     }
     return a;
@@ -100,10 +103,12 @@ export function foldPayroll(text: string, clock: FoldClock): PayrollSummary {
       }
       prev = r;
       const info = priceInfo(r.model);
-      if (!info.claude) {
-        // Re-price from tokens: the stored figure was a Claude-rate placeholder.
-        d.usd = (d.input / 1e6) * info.price.inputPerM + (d.output / 1e6) * info.price.outputPerM
-          + (d.cacheRead / 1e6) * info.price.cacheReadPerM + (d.cacheWrite / 1e6) * info.price.cacheWritePerM;
+      // A row the provider itself priced (OpenRouter's usage accounting, OpenCode's
+      // own cost field) is a fact: keep it. Everything else non-Claude is
+      // re-priced from tokens with the current table, long-context rule included.
+      const exact = r.usd_exact === true;
+      if (!info.claude && !exact) {
+        d.usd = costFromPrice(info.price, { inputTokens: d.input, outputTokens: d.output, cacheReadTokens: d.cacheRead, cacheWriteTokens: d.cacheWrite });
       }
       const t: PayrollTotals = { ...d, tokens: d.input + d.output + d.cacheRead + d.cacheWrite };
       if (t.tokens <= 0 && t.usd <= 0) continue;
@@ -112,6 +117,7 @@ export function foldPayroll(text: string, clock: FoldClock): PayrollSummary {
       if (model && !a.models.includes(model)) a.models.unshift(model);
       if (r.ts >= a.lastTs) { a.lastTs = r.ts; if (model) a.model = model; }
       if (!info.known && model) { a.unknownPrice = true; unknown.add(model); }
+      if (info.variable && !exact) a.variablePrice = true;
       if (info.claude) a.claude = true;
       const wins: PayrollWindow[] = ['all'];
       if (r.ts >= monthStart) wins.push('month');

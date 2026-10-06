@@ -53,6 +53,12 @@ export interface AgentUsageSample {
   /** Normalized model id (`claude-opus-4-8`, no `[1m]` suffix). */
   model: string;
   usd: number;
+  /** `usd` is the figure the provider itself charged (OpenRouter's usage
+   *  accounting, OpenCode's own cost field), not an estimate from a price
+   *  table. The payroll fold keeps it as-is instead of re-pricing from tokens. */
+  usdExact?: boolean;
+  /** Reasoning tokens inside `output`, when the provider reports them. */
+  reasoning?: number;
 }
 
 /** Breaker state, emitted by Lane A's policy on `control:breakerState` and

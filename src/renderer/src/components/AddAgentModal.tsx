@@ -11,6 +11,7 @@ import { type AccentColorName } from '@/design/tokens';
 import type { HireManifest } from '@shared/hire';
 import { hireQueueProgress } from '@shared/hireQueue';
 import { MCP_CATALOG } from '@shared/mcpCatalog';
+import { TIER_NAMES, type ModelTier } from '@shared/modelTiers';
 import {
   OSS_LOCAL_PICKS,
   OSS_PROVIDER_PICKS,
@@ -215,6 +216,18 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
   // command from the provider's preset binary (so Antigravity spawns `agy` and
   // Codex spawns `codex`, not the configured `claude`). For 'custom' we keep the
   // user's typed command rather than blanking it.
+  // A model tier is an engine + model the owner set once in Settings → AI
+  // Engines; one click puts a worker on it.
+  const applyTier = (tier: ModelTier) => {
+    setProvider(tier.provider);
+    setModel(tier.model);
+    const nextPreset = providerPreset(tier.provider);
+    if (!isClaudeProvider(tier.provider) && !nextPreset.resumeFlag && !nextPreset.resumeSubcommand) {
+      setResumeSessionId('');
+      setFolderNote(undefined);
+    }
+    setCommand(buildSpawnCommand(config, tier.model, tier.provider));
+  };
   const pickProvider = (id: AgentProvider) => {
     setProvider(id);
     // Seed the model: Claude from the global defaultModel; other engines from the
@@ -873,6 +886,29 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
 
                 {section === 'engine' && (
                   <>
+                    {(config.modelTiers?.worker || config.modelTiers?.routine) && (
+                      <Row label={tr('addAgent.useTier')}>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          {TIER_NAMES.map((name) => {
+                            const tier = config.modelTiers?.[name];
+                            if (!tier) return null;
+                            const active = provider === tier.provider && (model ?? '') === tier.model;
+                            return (
+                              <button
+                                key={name}
+                                data-testid={`tier-chip-${name}`}
+                                onClick={() => applyTier(tier)}
+                                title={tr('addAgent.tierChipTitle', { provider: providerPreset(tier.provider).label, model: tier.model })}
+                                style={ossChip(active, accent)}
+                              >
+                                <ProviderLogo provider={tier.provider} size={12} />{' '}
+                                {name === 'worker' ? tr('addAgent.tierWorkerChip') : tr('addAgent.tierRoutineChip')}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </Row>
+                    )}
                     <Row label={tr('addAgent.provider')}>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {AGENT_PROVIDER_PRESETS.map((p) => {

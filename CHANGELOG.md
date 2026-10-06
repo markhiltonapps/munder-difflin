@@ -6,6 +6,49 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **Route workers through OpenRouter, by job, without touching Michael.** Settings → Agents & Models →
+  AI Engines gains **Model tiers**: a *Worker* tier (implementation, anything that must be right) and
+  a *Routine* tier (triage, formatting, summaries, look-ups), each an engine + model id + reasoning
+  effort + max output tokens. One button fills the suggested setup (GPT-6.1 Sol at high effort on
+  OpenCode via OpenRouter for workers; DeepSeek V4.1 Flash at low effort for routine work). Michael
+  picks a tier when he spawns a worker (`"tier": "worker" | "routine"` on a spawn request; the
+  current values sit in `tiers.json` in the hive root), with a standing rule to try routine first
+  and re-dispatch once on the worker tier if it fails, never onto his own model. The Hire dialog
+  offers both tiers as one-click chips. Unset tiers change nothing, so an upgrade is silent until
+  you fill them in. Michael's own engine stays the manager setting it always was.
+- **OpenCode and Qwen Code carry the tier's effort and budget.** An OpenCode worker on an
+  OpenRouter tier model gets that tier's reasoning effort in its per-agent config and, for GPT-6.1
+  Sol, a 272k context limit so OpenCode compacts *before* the request crosses the line past which
+  the whole call bills double. A Qwen Code worker on OpenRouter gets the OpenRouter key under the
+  name Qwen reads, OpenRouter's own model id, and the proxy sidecar adds the reasoning effort and
+  output cap to every request the CLI leaves unset.
+- **Exact cost per call from OpenRouter.** The proxy sidecar asks OpenRouter for usage accounting
+  and writes the dollars actually charged, cached and reasoning token counts included, into the
+  cost ledger. Payroll keeps those figures as billed instead of re-estimating from a price table
+  (OpenCode's own per-message cost is kept the same way). The context gauge reads GPT-6.1 Sol
+  against its 272k billing line.
+- **Test connection for OpenRouter.** Beside the OpenRouter key in Settings → AI Engines: one short
+  real call per tier model (60-token cap, optional extra model id), showing tokens, the exact cost
+  OpenRouter reports, latency and the first words of the reply. A fraction of a cent, and the way
+  to see what a job costs before an agent runs on it.
+- **OpenRouter key from the environment.** A key in `OPENROUTER_API_KEY` when the app starts is
+  used when none is stored in Settings, and Settings says "from environment" so you know which one
+  is live. The key never leaves the main process.
+- **Payroll says where a big token count came from.** The sidebar hover now lists "cached
+  re-reads" with their share of today's tokens: a tool-heavy Claude session re-sends its whole
+  context on every request, mostly as cheap cache reads, which is how a couple of questions read
+  as millions of tokens.
+
+### Changed
+
+- **Price table: GPT-6.1 Sol added, DeepSeek V4.1 Flash corrected.** GPT-6.1 Sol is $2 in / $10 out /
+  $0.10 cached per million, with the whole request at 2× input and 1.5× output past 272k input
+  tokens; the Pro variant shares the row. DeepSeek V4.1 Flash now carries DeepSeek's list price
+  ($0.15 / $0.60) and is flagged "≈ price" in Payroll because OpenRouter routes it to upstreams whose
+  rates span a 3× range; the exact figure arrives with the provider's own charge.
+
 ### Fixed
 
 - **Stapler now actually captures the other side of a call.** Every system-audio request was being
