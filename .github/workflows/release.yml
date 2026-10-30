@@ -11,6 +11,11 @@ name: Release
 #      its next check. A version with a suffix (1.0.1-rc.1) publishes as a
 #      PRE-RELEASE, which the updater ignores: a build you can download and try
 #      without rolling it out to everyone.
+#
+# The release does NOT wait for every platform to succeed: it publishes whatever
+# built, and fails only if the Windows installer is missing. A macOS runner
+# that never arrives, or a Mac build that fails, must not hold the Windows
+# release hostage. Let a run finish on its own; cancelling it skips the publish.
 on:
   push:
     tags:
@@ -29,6 +34,8 @@ jobs:
   build:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # A hung package step must not hold the run open for GitHub's 6-hour default.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -88,23 +95,43 @@ jobs:
       - name: Package installers
         # GH_TOKEN lets electron-builder skip its own publish; we upload via the
         # release step below for full control over the asset set.
-        run: npx electron-builder ${{ matrix.args }} --publish never
+        #
+        # macOS code signing + notarization — MUST be macOS-only. CSC_LINK is the
+        # Apple Developer ID .p12; if it leaks into the Windows/Linux runners,
+        # electron-builder tries to sign those targets with the mac cert and the
+        # build hard-fails ("cannot extract publisher name"). So gate on the OS.
+        #   APPLE_CERTIFICATE_P12       = base64 of the "Developer ID Application" .p12
+        #   APPLE_CERTIFICATE_PASSWORD  = that .p12's export password (REQUIRED if P12 set,
+        #                                 else electron-builder imports with an empty
+        #                                 password and fails "MAC verification failed")
+        # All optional. The signing variables are exported ONLY when the
+        # certificate secret is present: an EMPTY CSC_LINK is not "unset" to
+        # electron-builder, it is a certificate path of "", which it resolves to
+        # the repo directory and fails with "<dir> not a file" (every Mac run
+        # before this went red that way). Without a certificate, identity
+        # auto-discovery is switched off too, so the Mac build ships unsigned the
+        # same way a contributor's local build does.
+        shell: bash
+        run: |
+          if [ -n "$APPLE_CERTIFICATE_P12" ]; then
+            export CSC_LINK="$APPLE_CERTIFICATE_P12"
+            export CSC_KEY_PASSWORD="$APPLE_CERTIFICATE_PASSWORD"
+            export APPLE_ID="$APPLE_ID_SECRET"
+            export APPLE_APP_SPECIFIC_PASSWORD="$APPLE_APP_SPECIFIC_PASSWORD_SECRET"
+            export APPLE_TEAM_ID="$APPLE_TEAM_ID_SECRET"
+            echo "signing with the configured Developer ID certificate"
+          else
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+            echo "no signing certificate configured: building unsigned"
+          fi
+          npx electron-builder ${{ matrix.args }} --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # macOS code signing + notarization — MUST be macOS-only. CSC_LINK is the
-          # Apple Developer ID .p12; if it leaks into the Windows/Linux runners,
-          # electron-builder tries to sign those targets with the mac cert and the
-          # build hard-fails ("cannot extract publisher name"). So gate on the OS.
-          #   APPLE_CERTIFICATE_P12       = base64 of the "Developer ID Application" .p12
-          #   APPLE_CERTIFICATE_PASSWORD  = that .p12's export password (REQUIRED if P12 set,
-          #                                 else electron-builder imports with an empty
-          #                                 password and fails "MAC verification failed")
-          # All optional: with the secrets unset every runner builds unsigned and stays green.
-          CSC_LINK: ${{ matrix.os == 'macos-latest' && secrets.APPLE_CERTIFICATE_P12 || '' }}
-          CSC_KEY_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
-          APPLE_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_ID || '' }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
-          APPLE_TEAM_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_TEAM_ID || '' }}
+          APPLE_CERTIFICATE_P12: ${{ matrix.os == 'macos-latest' && secrets.APPLE_CERTIFICATE_P12 || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_ID_SECRET: ${{ matrix.os == 'macos-latest' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD_SECRET: ${{ matrix.os == 'macos-latest' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID_SECRET: ${{ matrix.os == 'macos-latest' && secrets.APPLE_TEAM_ID || '' }}
 
       - name: Generate checksums
         shell: bash
@@ -140,7 +167,11 @@ jobs:
   publish:
     name: Publish release
     needs: build
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    # Runs after the builds WHATEVER their outcome (always), except when the run
+    # was cancelled. A failed or never-scheduled Mac job must not skip the
+    # release the Windows and Linux builds are ready for; the flatten step below
+    # is what insists on the Windows installer being there.
+    if: ${{ always() && needs.build.result != 'cancelled' && (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -178,11 +209,24 @@ jobs:
           path: artifacts
 
       - name: Flatten + merge checksums
+        shell: bash
         run: |
           mkdir -p release
           find artifacts -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o -name '*.AppImage' -o -name '*.blockmap' -o -name 'latest*.yml' \) -exec cp {} release/ \;
           cat artifacts/*/SHA256SUMS-*.txt > release/SHA256SUMS.txt 2>/dev/null || true
           ls -la release
+          # The Windows auto-update needs exactly these three; without them the
+          # in-app updater has nothing to install, so a release missing them is
+          # not a release.
+          missing=""
+          ls release/*-setup.exe >/dev/null 2>&1 || missing="$missing setup.exe"
+          ls release/*-setup.exe.blockmap >/dev/null 2>&1 || missing="$missing blockmap"
+          [ -f release/latest.yml ] || missing="$missing latest.yml"
+          if [ -n "$missing" ]; then
+            echo "::error::the Windows build did not produce:$missing — not publishing"
+            exit 1
+          fi
+          ls release/latest-mac.yml >/dev/null 2>&1 || echo "::warning::no macOS build in this release (the Mac job failed or did not run)"
 
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v2
